@@ -1,16 +1,16 @@
 from pathlib import Path
 
-from agda_client import run_plain_agda
-from proof_files import (
+from core.agda_client import run_plain_agda
+from core.proof_files import (
     append_helper_declaration,
     reset_helpers_file,
     restore_file,
     save_file,
     write_helper_goal_file,
 )
-from proof_history import ProofHistory
-from proof_single import prove_single
-from proof_state import ProofObligation, RecursiveProofResult
+from core.proof_history import ProofHistory
+from core.proof_state import ProofObligation, RecursiveProofResult
+from proof.proof_single import prove_single
 
 
 MODEL = "qwen2.5-coder:7b"

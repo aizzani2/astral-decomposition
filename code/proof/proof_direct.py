@@ -1,16 +1,16 @@
 from pathlib import Path
 
-from agda_client import load_agda_and_get_first_goal, run_plain_agda
-from llm_client import OllamaClient
-from proof_context import (
+from core.agda_client import load_agda_and_get_first_goal, run_plain_agda
+from core.llm_client import OllamaClient
+from core.proof_context import (
     find_enclosing_top_level_decl_name,
     get_signature_line,
     get_start_line_from_range,
 )
-from proof_files import restore_file, save_file
-from proof_history import ProofHistory
-from proof_state import DirectProofResult
-from source_edit import replace_top_level_decl, validate_declaration_name
+from core.proof_files import restore_file, save_file
+from core.proof_history import ProofHistory
+from core.proof_state import DirectProofResult
+from util.source_edit import replace_top_level_decl, validate_declaration_name
 
 
 MODEL = "qwen2.5-coder:7b"

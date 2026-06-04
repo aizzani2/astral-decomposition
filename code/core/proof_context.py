@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Any
 
-from agda_client import load_agda_and_get_first_goal
-from proof_state import AgdaGoal, AgdaLoadResult
+from core.agda_client import load_agda_and_get_first_goal
+from core.proof_state import AgdaGoal, AgdaLoadResult
 
 
 def get_start_line_from_range(goal_range: Any) -> int:

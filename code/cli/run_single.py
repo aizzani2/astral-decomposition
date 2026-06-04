@@ -1,12 +1,13 @@
 import argparse
 from pathlib import Path
 
-from proof_files import reset_helpers_file
-from proof_single import prove_single
+from core.proof_files import reset_helpers_file
+from proof.proof_single import prove_single
 
 
-DEFAULT_AGDA_FILE = Path("Tests/Target.agda")
-DEFAULT_HELPERS_FILE = Path("Tests/Helpers.agda")
+DEFAULT_AGDA_FILE = Path("agda_files/Tests/Target.agda")
+DEFAULT_HELPERS_FILE = Path("agda_files/Tests/Helpers.agda")
+DEFAULT_HELPER_GOAL_FILE = Path("agda_files/Tests/HelperGoal.agda")
 
 
 def main() -> None:

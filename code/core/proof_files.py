@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from helper_utils import helper_signatures_to_text
-from proof_state import ProofObligation, ProposedHelper
+from util.helper_utils import helper_signatures_to_text
+from core.proof_state import ProofObligation, ProposedHelper
 
 
 DEFAULT_HELPERS_MODULE = """module Tests.Helpers where

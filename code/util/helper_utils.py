@@ -1,4 +1,4 @@
-from proof_state import ProofObligation, ProposedHelper
+from core.proof_state import ProofObligation, ProposedHelper
 
 
 def parse_helper_signatures(helpers: str) -> list[ProposedHelper]:

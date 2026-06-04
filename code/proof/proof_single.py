@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from proof_decompose import decompose_once
-from proof_direct import prove_direct
-from proof_history import ProofHistory
-from proof_state import SingleProofResult
+from proof.proof_decompose import decompose_once
+from proof.proof_direct import prove_direct
+from core.proof_history import ProofHistory
+from core.proof_state import SingleProofResult
 
 
 MODEL = "qwen2.5-coder:7b"
@@ -73,7 +73,7 @@ def prove_single(
             declaration=decomposition_result.target_declaration,
             obligations=decomposition_result.obligations,
             output=(
-                "Direct proof failed, and decomposition also failed.\n\n"
+                "Direct proof failed and decomposition also failed.\n\n"
                 "Direct proof output:\n"
                 f"{direct_result.output}\n\n"
                 "Decomposition output:\n"

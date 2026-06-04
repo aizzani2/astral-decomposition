@@ -3,11 +3,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from proof_state import AgdaCheckResult, AgdaGoal, AgdaLoadResult
+from core.proof_state import AgdaCheckResult, AgdaGoal, AgdaLoadResult
 
 
 MAX_JSON_LINES = 300
-AGDA_IMPORT_PATH = "."
+AGDA_IMPORT_PATH = "agda_files"
 
 
 def clean_json_line(line: str) -> str:

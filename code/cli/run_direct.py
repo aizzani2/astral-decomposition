@@ -1,11 +1,11 @@
 import argparse
 from pathlib import Path
 
-from proof_direct import prove_direct
+from proof.proof_direct import prove_direct
 
-
-DEFAULT_AGDA_FILE = Path("Tests/Target.agda")
-
+DEFAULT_AGDA_FILE = Path("agda_files/Tests/Target.agda")
+DEFAULT_HELPERS_FILE = Path("agda_files/Tests/Helpers.agda")
+DEFAULT_HELPER_GOAL_FILE = Path("agda_files/Tests/HelperGoal.agda")
 
 def main() -> None:
     parser = argparse.ArgumentParser(

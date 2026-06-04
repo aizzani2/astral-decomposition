@@ -1,6 +1,6 @@
 import requests
 
-from proof_state import LLMDeclResult, LLMHelperDeclResult
+from core.proof_state import LLMDeclResult, LLMHelperDeclResult
 
 
 class OllamaClient:
