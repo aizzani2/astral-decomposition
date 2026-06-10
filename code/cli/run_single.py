@@ -3,6 +3,8 @@ from pathlib import Path
 
 from core.proof_files import reset_helpers_file
 from proof.proof_single import prove_single
+from core.proof_history import ProofHistory
+from core.config import DEFAULT_MODEL
 
 
 DEFAULT_AGDA_FILE = Path("agda_files/Tests/Target.agda")
@@ -29,7 +31,7 @@ def main() -> None:
 
     parser.add_argument(
         "--model",
-        default="qwen2.5-coder:7b",
+        default=DEFAULT_MODEL,
         help="Ollama model to use.",
     )
 
@@ -54,12 +56,14 @@ def main() -> None:
 
     reset_helpers_file(helpers_file)
 
+    history = ProofHistory()
     result = prove_single(
         agda_file=agda_file,
         helpers_file=helpers_file,
         model=args.model,
         direct_max_attempts=args.direct_max_attempts,
         helper_max_attempts=args.helper_max_attempts,
+        history=history,
     )
 
     print("\n================================")

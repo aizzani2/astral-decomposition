@@ -10,16 +10,13 @@ from core.proof_context import (
 from core.proof_files import restore_file, save_file
 from core.proof_history import ProofHistory
 from core.proof_state import DirectProofResult
+from core.config import DEFAULT_MODEL, DIRECT_MAX_ATTEMPTS
 from util.source_edit import replace_top_level_decl, validate_declaration_name
-
-
-MODEL = "qwen2.5-coder:7b"
-DIRECT_MAX_ATTEMPTS = 3
 
 
 def prove_direct(
     agda_file: Path,
-    model: str = MODEL,
+    model: str = DEFAULT_MODEL,
     max_attempts: int = DIRECT_MAX_ATTEMPTS,
     history: ProofHistory | None = None,
 ) -> DirectProofResult:
@@ -175,6 +172,18 @@ Do not change the target type signature.
         )
 
         previous_errors = history.messages_for_target(target_name)
+
+        print("\nUser feedback for next attempt? Press Enter to skip.")
+        feedback = input("> ").strip()
+
+        if feedback:
+            previous_errors.append(
+                f"""
+        User feedback on the previous failed attempt:
+
+        {feedback}
+        """
+            )
 
     restore_file(agda_file, original_source)
 

@@ -234,6 +234,18 @@ Do not change the target type signature.
 
         previous_errors = history.messages_for_target(target_name)
 
+        print("\nUser feedback for next attempt? Press Enter to skip.")
+        feedback = input("> ").strip()
+
+        if feedback:
+            previous_errors.append(
+                f"""
+        User feedback on the previous failed attempt:
+
+        {feedback}
+        """
+            )
+
         restore_file(helpers_file, original_helpers)
 
     restore_file(agda_file, original_source)

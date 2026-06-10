@@ -11,19 +11,14 @@ from core.proof_files import (
 from core.proof_history import ProofHistory
 from core.proof_state import ProofObligation, RecursiveProofResult
 from proof.proof_single import prove_single
-
-
-MODEL = "qwen2.5-coder:7b"
-DIRECT_MAX_ATTEMPTS = 3
-HELPER_MAX_ATTEMPTS = 5
-MAX_DEPTH = 5
+from core.config import DEFAULT_MODEL, DIRECT_MAX_ATTEMPTS, HELPER_MAX_ATTEMPTS, MAX_DEPTH
 
 
 def prove_recursive(
     agda_file: Path,
     helpers_file: Path,
     helper_goal_file: Path,
-    model: str = MODEL,
+    model: str = DEFAULT_MODEL,
     direct_max_attempts: int = DIRECT_MAX_ATTEMPTS,
     helper_max_attempts: int = HELPER_MAX_ATTEMPTS,
     max_depth: int = MAX_DEPTH,

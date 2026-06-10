@@ -4,17 +4,13 @@ from proof.proof_decompose import decompose_once
 from proof.proof_direct import prove_direct
 from core.proof_history import ProofHistory
 from core.proof_state import SingleProofResult
-
-
-MODEL = "qwen2.5-coder:7b"
-DIRECT_MAX_ATTEMPTS = 3
-HELPER_MAX_ATTEMPTS = 5
+from core.config import DEFAULT_MODEL, DIRECT_MAX_ATTEMPTS, HELPER_MAX_ATTEMPTS
 
 
 def prove_single(
     agda_file: Path,
     helpers_file: Path,
-    model: str = MODEL,
+    model: str = DEFAULT_MODEL,
     direct_max_attempts: int = DIRECT_MAX_ATTEMPTS,
     helper_max_attempts: int = HELPER_MAX_ATTEMPTS,
     history: ProofHistory | None = None,

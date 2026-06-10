@@ -2,6 +2,9 @@ import argparse
 from pathlib import Path
 
 from proof.proof_direct import prove_direct
+from core.proof_history import ProofHistory
+from core.config import DEFAULT_MODEL
+
 
 DEFAULT_AGDA_FILE = Path("agda_files/Tests/Target.agda")
 DEFAULT_HELPERS_FILE = Path("agda_files/Tests/Helpers.agda")
@@ -20,7 +23,7 @@ def main() -> None:
 
     parser.add_argument(
         "--model",
-        default="qwen2.5-coder:7b",
+        default=DEFAULT_MODEL,
         help="Ollama model to use.",
     )
 
@@ -33,10 +36,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    history = ProofHistory()
     result = prove_direct(
         agda_file=Path(args.file),
         model=args.model,
         max_attempts=args.max_attempts,
+        history=history,
     )
 
     print("\n================================")
