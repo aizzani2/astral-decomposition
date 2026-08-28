@@ -14,8 +14,7 @@ from util.helper_utils import parse_helper_signatures, proposed_helpers_to_oblig
 from util.source_edit import ensure_import, replace_top_level_decl, validate_declaration_name
 
 
-MODEL = "qwen2.5-coder:7b"
-HELPER_MAX_ATTEMPTS = 5
+from core.config import DEFAULT_MODEL as MODEL, HELPER_MAX_ATTEMPTS
 
 HELPERS_IMPORT = "open import Tests.Helpers"
 
@@ -27,6 +26,7 @@ def decompose_once(
     model: str = MODEL,
     max_attempts: int = HELPER_MAX_ATTEMPTS,
     history: ProofHistory | None = None,
+    interactive: bool = False,
 ) -> DecompositionResult:
     """
     Try to prove the declaration containing the first hole by proposing helpers.
@@ -114,9 +114,11 @@ def decompose_once(
     expected_signature = get_signature_line(original_source, target_name)
 
     llm = OllamaClient(model=model)
-    previous_errors = history.messages_for_target(target_name)
+    extra_notes: list[str] = []
 
     for attempt in range(1, max_attempts + 1):
+        previous_errors = history.messages_for_target(target_name) + extra_notes
+
         print(f"\n=== Decomposition attempt {attempt} for {target_name} ===")
         print("Goal type:")
         print(goal.type)
@@ -153,7 +155,7 @@ def decompose_once(
             print("\nCould not parse or validate LLM response:")
             print(e)
 
-            previous_errors.append(
+            extra_notes.append(
                 f"""
 Your previous response could not be parsed or validated.
 
@@ -232,19 +234,14 @@ Do not change the target type signature.
             agda_output=check_result.output,
         )
 
-        previous_errors = history.messages_for_target(target_name)
+        if interactive:
+            print("\nUser feedback for next attempt? Press Enter to skip.")
+            feedback = input("> ").strip()
 
-        print("\nUser feedback for next attempt? Press Enter to skip.")
-        feedback = input("> ").strip()
-
-        if feedback:
-            previous_errors.append(
-                f"""
-        User feedback on the previous failed attempt:
-
-        {feedback}
-        """
-            )
+            if feedback:
+                extra_notes.append(
+                    "User feedback on the previous failed attempt:\n" + feedback
+                )
 
         restore_file(helpers_file, original_helpers)
 
