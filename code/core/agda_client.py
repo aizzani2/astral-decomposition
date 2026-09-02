@@ -18,9 +18,16 @@ from __future__ import annotations
 
 import json
 import subprocess
+import queue
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
+from core.config import (
+  AGDA_IMPORT_PATH,
+  AGDA_TIMEOUT_SECONDS,
+)
 from core.proof_state import (
     AgdaCheckResult,
     AgdaGoal,
@@ -31,8 +38,6 @@ from core.proof_state import (
 
 
 MAX_JSON_LINES = 2000
-AGDA_IMPORT_PATH = "agda_files"
-DEFAULT_TIMEOUT = 120
 
 
 def clean_json_line(line: str) -> str:
@@ -53,6 +58,7 @@ class AgdaSession:
     """
     One live `agda --interaction-json` process, scoped to one file.
 
+
     Usage:
         with AgdaSession(path) as session:
             result = session.load()
@@ -63,7 +69,7 @@ class AgdaSession:
         self,
         filename: Path,
         import_path: str = AGDA_IMPORT_PATH,
-        timeout: int = DEFAULT_TIMEOUT,
+        timeout: int = AGDA_TIMEOUT_SECONDS,
     ) -> None:
         self.filename = filename
         self.absolute = str(filename.resolve())
@@ -80,6 +86,21 @@ class AgdaSession:
             text=True,
             bufsize=1,
         )
+        self._lines: queue.Queue[str | None] = queue.Queue()
+        self._stderr: list[str] = []
+
+        def pump_stdout() -> None:
+            for line in self.proc.stdout:      # type: ignore[union-attr]
+                self._lines.put(line)
+            self._lines.put(None)              # EOF sentinel
+
+        def pump_stderr() -> None:
+            for line in self.proc.stderr:      # type: ignore[union-attr]
+                self._stderr.append(line)
+
+        for pump in (pump_stdout, pump_stderr):
+            thread = threading.Thread(target=pump, daemon=True)
+            thread.start()
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -101,26 +122,35 @@ class AgdaSession:
     # -- low level ---------------------------------------------------------
 
     def _send(self, command: str) -> None:
+        payload = f'IOTCM "{self.absolute}" None Direct ({command})\n'
         if self.proc is None or self.proc.stdin is None:
             raise RuntimeError("Agda session is not running.")
 
-        self.proc.stdin.write(
-            f'IOTCM "{self.absolute}" None Direct ({command})\n'
-        )
+        payload = f'IOTCM "{self.absolute}" None Direct ({command})\n'
+        self.proc.stdin.write(payload)
         self.proc.stdin.flush()
 
     def _read_objects(self, stop_when: Any) -> list[dict[str, Any]]:
         """Read JSON objects until stop_when(objects) is true or we run dry."""
-
-        if self.proc is None or self.proc.stdout is None:
-            raise RuntimeError("Agda session is not running.")
-
         objects: list[dict[str, Any]] = []
+        deadline = time.monotonic() + self.timeout
 
-        for _ in range(MAX_JSON_LINES):
-            raw = self.proc.stdout.readline()
+        while len(objects) < MAX_JSON_LINES:
+            remaining = deadline - time.monotonic()
 
-            if not raw:
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Agda produced no usable response within {self.timeout}s "
+                    f"for {self.filename}.\n"
+                    f"stderr:\n{''.join(self._stderr[-40:])}"
+                )
+
+            try:
+                raw = self._lines.get(timeout=min(remaining, 1.0))
+            except queue.Empty:
+                continue
+
+            if raw is None:  # Agda exited
                 break
 
             try:
@@ -141,13 +171,11 @@ class AgdaSession:
         self._send(f'Cmd_load "{self.absolute}" []')
 
         def done(objects: list[dict[str, Any]]) -> bool:
-            saw_points = any(o.get("kind") == "InteractionPoints" for o in objects)
-            saw_info = any(
+            return any(
                 o.get("kind") == "DisplayInfo"
                 and o.get("info", {}).get("kind") in ("AllGoalsWarnings", "Error")
                 for o in objects
             )
-            return saw_points and saw_info
 
         objects = self._read_objects(done)
         return _interpret_load(objects)
@@ -258,12 +286,14 @@ def _interpret_load(objects: list[dict[str, Any]]) -> AgdaLoadResult:
 
     for raw_goal in goals:
         goal_id = _extract_goal_id(raw_goal)
+        goal_range = _range_for_goal_id(interaction_points, goal_id)
+
+        if goal_range is None:
+            own = raw_goal.get("constraintObj", {}).get("range", [])
+            goal_range = own[0] if own else None
+
         parsed_goals.append(
-            AgdaGoal(
-                id=goal_id,
-                type=raw_goal.get("type", ""),
-                range=_range_for_goal_id(interaction_points, goal_id),
-            )
+            AgdaGoal(id=goal_id, type=raw_goal.get("type", ""), range=goal_range)
         )
 
     if not parsed_goals:
@@ -431,7 +461,7 @@ def check_sketch(
 def run_plain_agda(
     filename: Path,
     import_path: str = AGDA_IMPORT_PATH,
-    timeout: int = DEFAULT_TIMEOUT,
+    timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaCheckResult:
     try:
         result = subprocess.run(

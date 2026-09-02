@@ -254,10 +254,16 @@ Surrounding code (the hole is marked HERE):
 {error_text}
 Rules:
 - The term must have exactly the goal type shown above.
-- Use only the variables listed in scope, plus imported names.
+- Use only the variables listed in scope, plus the names listed above.
+- `trans`, `sym`, and `cong` are functions and must be applied to arguments.
+  Writing them bare is always a type error.
+- You are inside the definition of {target_name}. A recursive call to
+  {target_name} on structurally smaller arguments is available, and is how the
+  induction hypothesis is used. For a goal about `suc n`, the hypothesis is
+  `{target_name} n ...`.
 - If the term needs parentheses to sit inside a clause body, include them.
-- Do not introduce new holes. Do not write {{!!}}.
-- Do not write `postulate` and do not invent lemma names that do not exist.
+- Do not introduce new holes. Do not write {{!!}} or `?` or `_`.
+- Do not write `postulate` and do not invent names that do not exist.
 
 <AGDA_TERM>
 """

@@ -1,4 +1,7 @@
 from pathlib import Path
+from contextlib import contextmanager
+from typing import Iterator
+
 
 from core.proof_state import ProofObligation, ProposedHelper
 
@@ -23,6 +26,14 @@ def restore_file(path: Path, content: str | None) -> None:
     else:
         path.write_text(content)
 
+@contextmanager
+def preserved_file(path: Path) -> Iterator[str | None]:
+    """Restore path's contents on the way out, including on Ctrl-C."""
+    original = save_file(path)
+    try:
+        yield original
+    finally:
+        restore_file(path, original)
 
 def reset_helpers_file(helpers_file: Path) -> None:
     helpers_file.parent.mkdir(parents=True, exist_ok=True)

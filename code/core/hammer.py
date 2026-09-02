@@ -18,9 +18,11 @@ plain `agda`, because the file legitimately still contains other holes.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.config import AGDA_IMPORT_PATH
 from core.agda_client import AgdaSession, check_sketch
 from core.llm_client import ProofLLM
 from core.proof_state import GapResult, SketchGap
@@ -31,9 +33,9 @@ from util.sketch_ops import count_holes, excerpt_around_hole, replace_hole
 # load. Extend per project rather than making this list open-ended.
 DEFAULT_TACTICS: tuple[str, ...] = (
     "refl",
-    "tt",
-    "_",
 )
+BAD_TERM = re.compile(r"(?:^|[\s(])[_?](?:[\s)]|$)")
+
 
 
 @dataclass
@@ -41,7 +43,7 @@ class HammerConfig:
     tactics: tuple[str, ...] = DEFAULT_TACTICS
     use_mimer: bool = True
     llm_attempts: int = 2
-    import_path: str = "agda_files"
+    import_path: str = AGDA_IMPORT_PATH
     extra_tactics: list[str] = field(default_factory=list)
 
     def all_tactics(self) -> list[str]:
@@ -66,6 +68,11 @@ def close_gap(
     baseline_holes = count_holes(source)
 
     def attempt(term: str, method: str) -> GapResult | None:
+        if not _is_admissible(term):
+            return GapResult(
+                success=False, gap=gap, method=method,
+                output=f"Inadmissible term: {term!r}",
+            )
         ok, output = _candidate_typechecks(
             agda_file=agda_file,
             source=source,
@@ -89,12 +96,10 @@ def close_gap(
     # 1. cheap tactics
     for tactic in config.all_tactics():
         result = attempt(tactic, f"tactic:{tactic}")
-
         if result and result.success:
             return result
-
         if result:
-            failures.append(f"{tactic}: {_first_line(result.output)}")
+            failures.append(f"{tactic}: {_first_lines(result.output)}")
 
     # 2. Agda's own automation
     if config.use_mimer and gap.goal_id is not None:
@@ -107,7 +112,7 @@ def close_gap(
                 return result
 
             if result:
-                failures.append(f"mimer ({term}): {_first_line(result.output)}")
+                failures.append(f"mimer ({term}): {_first_lines(result.output)}")
 
     # 3. the model
     if llm is not None:
@@ -136,7 +141,7 @@ def close_gap(
                 previous.append(
                     f"You proposed:\n{term}\n\nAgda rejected it:\n{result.output}"
                 )
-                failures.append(f"llm ({term}): {_first_line(result.output)}")
+                failures.append(f"llm ({term}): {_first_lines(result.output)}")
 
     return GapResult(
         success=False,
@@ -205,9 +210,14 @@ def _try_mimer(agda_file: Path, goal_id: int, import_path: str) -> str | None:
         return None
 
 
-def _first_line(text: str) -> str:
-    for line in text.splitlines():
-        if line.strip():
-            return line.strip()
+def _first_lines(text: str, n: int = 6) -> str:
+    lines = [line for line in text.splitlines() if line.strip()]
+    return "\n".join(lines[:n])
 
-    return ""
+BAD_TERM = re.compile(r"(?:^|[\s(])[_?](?:[\s)]|$)")
+
+
+def _is_admissible(term: str) -> bool:
+    return bool(term.strip()) and not (
+        BAD_TERM.search(term) or "{!" in term
+    )

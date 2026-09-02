@@ -111,7 +111,6 @@ def infer_target_name_from_first_hole(
         raise ValueError(
             f"Agda found an error before getting to a hole:\n{load_result.message}"
         )
-
     if load_result.kind == "no-goals":
         raise ValueError("No goals found. The file may already typecheck.")
 

@@ -10,12 +10,13 @@ exist in the text).
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 from core.proof_state import SketchGap
 
 
-HOLE_RE = re.compile(r"\{!.*?!\}", re.DOTALL)
+HOLE_RE = re.compile(r"\{!.*?!\}|(?<![\w?])\?(?![\w?])", re.DOTALL)
 
 
 def find_holes(source: str) -> list[tuple[int, int]]:
@@ -173,3 +174,42 @@ def available_names(*sources: str) -> str:
                 names.append(name)
 
     return ", ".join(names)
+
+def available_signatures(*sources: str) -> str:
+    """Name AND type of every top-level declaration, for term synthesis."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+    sig = re.compile(r"^([^\s(){};.]+)\s*:\s+(.*)$")
+
+    for source in sources:
+        for line in (source or "").splitlines():
+            stripped = line.strip()
+
+            if not stripped or stripped.startswith("--") or " = " in stripped:
+                continue
+
+            match = sig.match(stripped)
+
+            if match and match.group(1) not in seen:
+                seen.add(match.group(1))
+                out.append(f"{match.group(1)} : {match.group(2)}")
+
+    return "\n".join(out)
+
+
+def context_signatures(agda_root: Path, exclude: frozenset[str] = frozenset()) -> str:
+    """
+    Signatures from every module in the Agda tree.
+
+    `trans`/`sym`/`cong` are defined in Tests.Util and only re-exported by
+    Tests.Context, so reading Context.agda alone finds nothing.
+    """
+
+    sources = [
+        path.read_text()
+        for path in sorted((agda_root / "Tests").glob("*.agda"))
+        if path.stem not in exclude
+    ]
+
+    return available_signatures(*sources)

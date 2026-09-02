@@ -2,12 +2,14 @@ import argparse
 from pathlib import Path
 
 from core.config import (
+    AGDA_ROOT,
     AGDA_IMPORT_PATH,
     DEFAULT_MODEL,
     GAP_LLM_ATTEMPTS,
     MAX_DEPTH,
     OLLAMA_BASE_URL,
     SKETCH_MAX_ATTEMPTS,
+    PROJECT_ROOT,
 )
 from core.hammer import HammerConfig
 from core.llm_client import OllamaBackend, ProofLLM
@@ -17,9 +19,9 @@ from core.proof_state import DSPResult
 from proof.proof_sketch import prove_dsp
 
 
-DEFAULT_AGDA_FILE = Path("agda_files/Tests/Target.agda")
-DEFAULT_HELPERS_FILE = Path("agda_files/Tests/Helpers.agda")
-DEFAULT_HELPER_GOAL_FILE = Path("agda_files/Tests/HelperGoal.agda")
+DEFAULT_AGDA_FILE = AGDA_ROOT / "Tests" / "Target.agda"
+DEFAULT_HELPERS_FILE = AGDA_ROOT / "Tests" / "Helpers.agda"
+DEFAULT_HELPER_GOAL_FILE = AGDA_ROOT / "Tests" / "HelperGoal.agda"
 
 
 def main() -> None:
@@ -85,6 +87,13 @@ def main() -> None:
     )
 
     report(result)
+
+    if result.success and result.final_source:
+        out_dir = PROJECT_ROOT / "proofs"
+        out_dir.mkdir(exist_ok=True)
+        out_path = out_dir / f"{result.target_name}.agda"
+        out_path.write_text(result.final_source)
+        print(f"\nProof written to {out_path}")
 
 
 def report(result: DSPResult, indent: int = 0) -> None:

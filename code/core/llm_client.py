@@ -43,7 +43,7 @@ class LLMBackend(Protocol):
 
 @dataclass
 class OllamaBackend:
-    model: str = "qwen2.5-coder:7b"
+    model: str = "qwen2.5-coder:14b"
     base_url: str = "http://localhost:11434"
     temperature: float = 0.6
     top_p: float = 0.95
@@ -231,6 +231,7 @@ class ProofLLM:
         excerpt: str,
         available_names: str = "",
         previous_errors: list[str] | None = None,
+        target_name: str = ""
     ) -> str:
         prompt = prompts.GAP_TEMPLATE.format(
             goal_type=goal_type.strip(),
@@ -239,6 +240,7 @@ class ProofLLM:
             available_names=available_names or "(none listed)",
             excerpt=excerpt,
             error_text=format_previous_errors(previous_errors or []),
+            target_name=target_name,
         )
 
         raw = self.backend.generate(prompt, timeout=self.timeout, stop=["</AGDA_TERM>"])

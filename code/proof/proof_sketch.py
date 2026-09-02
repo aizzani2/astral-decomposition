@@ -15,6 +15,7 @@ too wide, and only the second one is worth throwing more compute at.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from core.agda_client import check_sketch, run_plain_agda
 from core.config import (
@@ -22,11 +23,13 @@ from core.config import (
     GAP_LLM_ATTEMPTS,
     MAX_DEPTH,
     SKETCH_MAX_ATTEMPTS,
+    AGDA_ROOT,
 )
 from core.hammer import HammerConfig, close_gap
 from core.llm_client import ProofLLM, parse_informal_steps
 from core.proof_context import get_signature_line, infer_target_name_from_first_hole
 from core.proof_files import (
+    preserved_file,
     append_helper_declaration,
     reset_helpers_file,
     restore_file,
@@ -43,7 +46,14 @@ from core.proof_state import (
     ProofObligation,
     SketchGap,
 )
-from util.sketch_ops import available_names, build_gaps, count_holes, replace_hole
+from util.sketch_ops import (
+    available_names,
+    available_signatures,
+    build_gaps,
+    count_holes,
+    replace_hole,
+    context_signatures,
+)
 from util.source_edit import ensure_import, replace_top_level_decl
 
 
@@ -51,8 +61,17 @@ HELPERS_IMPORT = "open import Tests.Helpers"
 HELPERS_MODULE = "Tests.Helpers"
 CONTEXT_MODULE = "Tests.Context"
 
+def prove_dsp(agda_file: Path, helpers_file: Path, *args, **kwargs) -> DSPResult:
+    original_helpers = save_file(helpers_file)
 
-def prove_dsp(
+    with preserved_file(agda_file):
+        try:
+            return _prove_dsp(agda_file, helpers_file, *args, **kwargs)
+        except BaseException:
+            restore_file(helpers_file, original_helpers)
+            raise
+
+def _prove_dsp(
     agda_file: Path,
     helpers_file: Path,
     helper_goal_file: Path,
@@ -157,13 +176,16 @@ def prove_dsp(
         )
 
     # ---------------------------------------------------------------- prove
-    names = available_names(sketch.source, helpers_file.read_text())
+    names = available_signatures(
+        sketch.source,
+        context_signatures(AGDA_ROOT, exclude=frozenset({"Target", "HelperGoal"})),
+    )
     working_source = sketch.source
     gap_results: list[GapResult] = []
     promoted: list[ProofObligation] = []
 
-    # Descending order keeps the hole indices (and Agda's goal ids) of the
-    # earlier gaps valid as we splice solutions into later ones.
+    failed: list[GapResult] = []
+
     for gap in sorted(sketch.gaps, key=lambda g: g.hole_index, reverse=True):
         if verbose:
             print(f"{indent}  gap {gap.hole_index}: {gap.goal_type[:80]}")
@@ -198,23 +220,27 @@ def prove_dsp(
         gap_results.append(result)
 
         if not result.success:
-            restore_file(agda_file, original_source)
-            restore_file(helpers_file, original_helpers)
-
-            return DSPResult(
-                success=False,
-                target_name=target_name,
-                informal=informal,
-                sketch=sketch,
-                gap_results=gap_results,
-                output=(
-                    f"Could not close gap {gap.hole_index} "
-                    f"(goal: {gap.goal_type}).\n{result.output}"
-                ),
-            )
+            failed.append(result)
+            continue
 
         working_source = replace_hole(
             working_source, gap.hole_index, result.solution or ""
+        )
+
+    if failed:
+        restore_file(agda_file, original_source)
+        restore_file(helpers_file, original_helpers)
+
+        return DSPResult(
+            success=False,
+            target_name=target_name,
+            informal=informal,
+            sketch=sketch,
+            gap_results=gap_results,
+            output="\n\n".join(
+                f"Gap {r.gap.hole_index} ({r.gap.goal_type}):\n{r.output}"
+                for r in failed
+            ),
         )
 
     agda_file.write_text(working_source)
@@ -463,6 +489,13 @@ def _build_sketch(
 
     return None, errors
 
+def _is_degenerate(signature: str, goal_type: str) -> bool:
+    """A lemma that just restates the goal buys nothing and recurses forever."""
+    def norm(s: str) -> str:
+        s = re.sub(r"∀\s*[^→]*→", "", s)
+        s = re.sub(r"\([^:]+:[^)]+\)\s*→", "", s)
+        return " ".join(s.split())
+    return norm(signature) == norm(goal_type)
 
 def _promote_gap_to_lemma(
     agda_file: Path,
@@ -498,20 +531,29 @@ def _promote_gap_to_lemma(
     except (ValueError, RuntimeError) as error:
         return GapResult(success=False, gap=gap, method="failed", output=str(error))
 
+    if _is_degenerate(signature, gap.goal_type):
+        return GapResult(
+            success=False, gap=gap, method="failed",
+            output=(
+                f"Refusing to promote: lemma {lemma_name} restates the goal "
+                f"({signature}) and would not simplify it."
+            ),
+        )
+
     obligation = ProofObligation(
         name=lemma_name,
         signature=signature,
         informal_hint=gap.informal_hint,
     )
 
-    write_postulated_helpers_file(
-        helpers_file=helpers_file,
-        helpers=list(existing_lemmas) + [obligation],
+    # Append rather than rewrite: the parent may already have proved and
+    # appended sibling lemmas that its final check depends on.
+    saved_helpers = helpers_file.read_text()
+    append_helper_declaration(
+        helpers_file,
+        f"postulate\n  {lemma_name} : {signature}",
     )
 
-    # Apply the lemma to everything in scope, then to progressively fewer
-    # arguments: the model's abstraction rarely quantifies over exactly the
-    # right prefix on the first try.
     variables = [entry.name for entry in gap.context if entry.in_scope]
     candidates = [lemma_name] + [
         f"{lemma_name} {' '.join(variables[:k])}"
@@ -536,9 +578,10 @@ def _promote_gap_to_lemma(
 
     if result.success:
         result.method = f"lemma:{lemma_name} :: {signature}"
+    else:
+        restore_file(helpers_file, saved_helpers)
 
     return result
-
 
 def _lemma_from_method(result: GapResult) -> ProofObligation:
     payload = result.method.split("lemma:", 1)[1]

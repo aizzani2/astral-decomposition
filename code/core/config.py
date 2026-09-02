@@ -1,3 +1,5 @@
+from pathlib import Path
+
 DEFAULT_MODEL = "qwen2.5-coder:7b"  # TODO: replace me!
 
 # Legacy single-shot pipeline
@@ -16,8 +18,11 @@ MAX_DEPTH = 3  # recursion depth for lemmas
 # them on more sketches per draft. Raise DRAFT_SAMPLES before SKETCH_MAX_ATTEMPTS.
 
 AGDA_ERROR_MAX_CHARS = 4000
-AGDA_TIMEOUT_SECONDS = 120
-AGDA_IMPORT_PATH = "agda_files"
+AGDA_TIMEOUT_SECONDS = 30
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+AGDA_ROOT = PROJECT_ROOT / "agda_files"
+AGDA_IMPORT_PATH = str(AGDA_ROOT)
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 LLM_TIMEOUT_SECONDS = 180
