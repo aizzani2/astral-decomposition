@@ -21,6 +21,7 @@ from core.agda_client import check_sketch, run_plain_agda
 from core.config import (
     DEFAULT_MODEL,
     GAP_LLM_ATTEMPTS,
+    DRAFT_SAMPLES,
     MAX_DEPTH,
     SKETCH_MAX_ATTEMPTS,
     AGDA_ROOT,
@@ -79,6 +80,94 @@ def _prove_dsp(
     informal_proof_text: str | None = None,
     llm: ProofLLM | None = None,
     model: str = DEFAULT_MODEL,
+    depth: int = 0,
+    **kwargs,
+) -> DSPResult:
+    llm = llm or ProofLLM(model=model)
+
+    source = save_file(agda_file)
+
+    if source is None:
+        return DSPResult(
+            success=False, target_name="<unknown>",
+            output=f"File does not exist: {agda_file}",
+        )
+
+    try:
+        target_name, _goal, _load = infer_target_name_from_first_hole(agda_file)
+    except ValueError as error:
+        return DSPResult(success=False, target_name="<unknown>", output=str(error))
+
+    signature_line = get_signature_line(source, target_name)
+    statement = informal_statement or (
+        f"Prove the following statement, given in Agda notation:\n{signature_line}"
+    )
+
+    # A human-written proof skips drafting entirely.
+    if informal_proof_text:
+        try:
+            drafts = [
+                InformalProof(
+                    statement=statement,
+                    steps=parse_informal_steps(informal_proof_text),
+                    raw=informal_proof_text,
+                )
+            ]
+        except ValueError:
+            return DSPResult(
+                success=False, target_name=target_name,
+                output="Could not parse the supplied informal proof.",
+            )
+    else:
+        # Only spend the sampling budget at the top level; recursive calls
+        # would multiply it by the number of lemmas.
+        samples = DRAFT_SAMPLES if depth == 0 else 1
+
+        drafts = llm.draft_informal_proofs(
+            informal_statement=statement,
+            formal_signature=signature_line,
+            n_samples=samples,
+        )
+
+        # Prefer drafts that break work out into lemmas: those are the ones
+        # whose sketches declare the auxiliary facts the gaps will need.
+        drafts.sort(key=lambda d: -sum(1 for step in d.steps if step.hard))
+
+    if not drafts:
+        return DSPResult(
+            success=False, target_name=target_name,
+            output="Could not obtain a usable informal proof draft.",
+        )
+
+    last: DSPResult | None = None
+
+    for draft in drafts:
+        result = _attempt_dsp(
+            agda_file=agda_file,
+            helpers_file=helpers_file,
+            helper_goal_file=helper_goal_file,
+            informal=draft,
+            llm=llm,
+            model=model,
+            depth=depth,
+            **kwargs,
+        )
+
+        if result.success:
+            return result
+
+        last = result
+        restore_file(agda_file, source)
+
+    return last
+
+def _attempt_dsp(
+    agda_file: Path,
+    helpers_file: Path,
+    helper_goal_file: Path,
+    informal: InformalProof,
+    llm: ProofLLM | None = None,
+    model: str = DEFAULT_MODEL,
     sketch_max_attempts: int = SKETCH_MAX_ATTEMPTS,
     hammer: HammerConfig | None = None,
     max_depth: int = MAX_DEPTH,
@@ -118,24 +207,6 @@ def _prove_dsp(
 
     if verbose:
         print(f"\n{indent}=== DSP on {target_name} (depth {depth}) ===")
-
-    # ---------------------------------------------------------------- draft
-    informal = _get_informal_proof(
-        llm=llm,
-        informal_statement=informal_statement,
-        informal_proof_text=informal_proof_text,
-        signature_line=signature_line,
-        verbose=verbose,
-        indent=indent,
-    )
-
-    if informal is None:
-        restore_file(agda_file, original_source)
-        return DSPResult(
-            success=False,
-            target_name=target_name,
-            output="Could not obtain a usable informal proof draft.",
-        )
 
     if verbose:
         print(f"{indent}Informal proof:")
@@ -353,43 +424,6 @@ def _prove_dsp(
 # ---------------------------------------------------------------------------
 # Stage helpers
 # ---------------------------------------------------------------------------
-
-
-def _get_informal_proof(
-    llm: ProofLLM,
-    informal_statement: str | None,
-    informal_proof_text: str | None,
-    signature_line: str,
-    verbose: bool,
-    indent: str,
-) -> InformalProof | None:
-    statement = informal_statement or (
-        f"Prove the following statement, given in Agda notation:\n{signature_line}"
-    )
-
-    if informal_proof_text:
-        try:
-            steps = parse_informal_steps(informal_proof_text)
-        except ValueError:
-            return None
-
-        return InformalProof(
-            statement=statement,
-            steps=steps,
-            raw=informal_proof_text,
-        )
-
-    if verbose:
-        print(f"{indent}Drafting informal proof...")
-
-    try:
-        return llm.draft_informal_proof(
-            informal_statement=statement,
-            formal_signature=signature_line,
-        )
-    except (ValueError, RuntimeError):
-        return None
-
 
 def _build_sketch(
     agda_file: Path,

@@ -8,7 +8,7 @@ SINGLE_MAX_ATTEMPTS = 3
 HELPER_MAX_ATTEMPTS = 5
 
 # DSP pipeline
-DRAFT_SAMPLES = 1  # informal proofs sampled per problem
+DRAFT_SAMPLES = 4  # informal proofs sampled per problem
 SKETCH_MAX_ATTEMPTS = 3  # sketches tried per draft
 GAP_LLM_ATTEMPTS = 2  # model attempts per hole, after tactics and Mimer
 MAX_DEPTH = 3  # recursion depth for lemmas
