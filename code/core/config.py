@@ -17,6 +17,10 @@ LLM_TIMEOUT_SECONDS = 600
 # tokens on a 4B model and the model tended to keep "thinking" inside the
 # answer; with it off, ~7s. Keep it switchable so the two can be compared.
 OLLAMA_THINK = False
+# With thinking on, only these stages think. The short, term-level stages
+# (gap, lemma_signature) otherwise spend the whole token budget deliberating
+# and return empty text (observed: 15.8k thinking tokens, 140 s, no answer).
+OLLAMA_THINK_STAGES = frozenset({"draft", "sketch"})
 OLLAMA_NUM_CTX = 16384          # ollama's default (4096) truncates our prompts
 OLLAMA_NUM_PREDICT = 4096       # hard cap on generated tokens per call
 OLLAMA_NUM_PREDICT_THINKING = 16384

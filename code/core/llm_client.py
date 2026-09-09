@@ -58,7 +58,11 @@ class LLMBackend(Protocol):
     model: str
 
     def generate(
-        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+        self,
+        prompt: str,
+        timeout: int = 180,
+        stop: list[str] | None = None,
+        stage: str = "",
     ) -> LLMResponse:
         ...
 
@@ -75,13 +79,22 @@ class OllamaBackend:
     name: str = "ollama"
 
     def generate(
-        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+        self,
+        prompt: str,
+        timeout: int = 180,
+        stop: list[str] | None = None,
+        stage: str = "",
     ) -> LLMResponse:
+        think = self.think
+
+        if think and stage and stage not in config.OLLAMA_THINK_STAGES:
+            think = False
+
         num_predict = self.num_predict
 
         if num_predict is None:
             num_predict = (
-                config.OLLAMA_NUM_PREDICT_THINKING if self.think
+                config.OLLAMA_NUM_PREDICT_THINKING if think
                 else config.OLLAMA_NUM_PREDICT
             )
 
@@ -96,7 +109,7 @@ class OllamaBackend:
         # thinking model routinely writes the closing tag while planning, which
         # truncates the whole response to nothing. Parsing tolerates a missing
         # closing tag, so in thinking mode rely on num_predict instead.
-        if stop and not self.think:
+        if stop and not think:
             options["stop"] = stop
 
         body: dict[str, object] = {
@@ -106,8 +119,8 @@ class OllamaBackend:
             "options": options,
         }
 
-        if self.think is not None:
-            body["think"] = self.think
+        if think is not None:
+            body["think"] = think
 
         started = time.monotonic()
         response = requests.post(
@@ -133,7 +146,7 @@ class OllamaBackend:
             duration_s=duration,
             stop_reason=data.get("done_reason", ""),
             extra={
-                "think": self.think,
+                "think": think,
                 "options": options,
                 "total_duration_ns": data.get("total_duration"),
                 "load_duration_ns": data.get("load_duration"),
@@ -169,7 +182,11 @@ class AnthropicBackend:
         self._client = anthropic.Anthropic()
 
     def generate(
-        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+        self,
+        prompt: str,
+        timeout: int = 180,
+        stop: list[str] | None = None,
+        stage: str = "",
     ) -> LLMResponse:
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -221,7 +238,11 @@ class EchoBackend:
     name: str = "echo"
 
     def generate(
-        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+        self,
+        prompt: str,
+        timeout: int = 180,
+        stop: list[str] | None = None,
+        stage: str = "",
     ) -> LLMResponse:
         if self.calls is None:
             self.calls = []
@@ -293,7 +314,9 @@ class ProofLLM:
         started = time.monotonic()
 
         try:
-            response = self.backend.generate(prompt, timeout=self.timeout, stop=stop)
+            response = self.backend.generate(
+                prompt, timeout=self.timeout, stop=stop, stage=stage
+            )
         except Exception as error:
             run_logger().event(
                 "llm_call",

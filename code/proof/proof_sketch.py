@@ -597,6 +597,28 @@ def _build_sketch(
             previous_errors = history.messages_for_target(target_name)
             continue
 
+        # A hole of function type means a clause left an argument unbound
+        # (`f (suc m) = {!!}` for a two-argument f). Mimer is poor at
+        # introducing binders, and the paper's sketches only leave
+        # propositions open, so ask for the arguments to be matched instead.
+        unbound = [g.type for g in check.goals if _is_function_type(g.type)]
+
+        if unbound:
+            message = (
+                "Some clauses do not bind all arguments of the function, so their "
+                "holes have function types:\n  " + "\n  ".join(unbound) +
+                "\nWrite every argument on the left-hand side of each clause "
+                "(pattern matching where the informal proof does induction) so "
+                "that each hole is an equation, not a function."
+            )
+            history.add(
+                phase="sketch", target_name=target_name,
+                candidate=sketch_text, agda_output=message,
+            )
+            reject("unbound_args", message, sketch=sketch_text, lemmas=lemmas, raw=raw)
+            previous_errors = history.messages_for_target(target_name)
+            continue
+
         gaps = build_gaps(trial, check.goals)
 
         log.event(
@@ -705,6 +727,37 @@ def _obvious_syntax_problem(sketch_text: str) -> str:
             return message
 
     return ""
+
+
+def _is_function_type(goal_type: str) -> bool:
+    """True if the goal has an arrow at nesting depth 0 (a Π-type)."""
+
+    depth = 0
+
+    for char in goal_type:
+        if char in "({[":
+            depth += 1
+        elif char in ")}]":
+            depth = max(0, depth - 1)
+        elif char == "→" and depth == 0:
+            return True
+
+    return "->" in _strip_brackets(goal_type) or goal_type.lstrip().startswith("∀")
+
+
+def _strip_brackets(text: str) -> str:
+    out: list[str] = []
+    depth = 0
+
+    for char in text:
+        if char in "({[":
+            depth += 1
+        elif char in ")}]":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            out.append(char)
+
+    return "".join(out)
 
 
 def _first_code_line(text: str) -> str:

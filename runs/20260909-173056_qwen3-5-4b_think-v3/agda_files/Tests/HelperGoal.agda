@@ -3,8 +3,6 @@ module Tests.HelperGoal where
 open import Tests.Context
 open import Tests.Helpers
 
-addSucL : (m n : Nat) → m + suc n ≡ suc (m + n)
--- Base case: when m is zero, 0 + suc n reduces to suc n.
-addSucL zero = {!!}
--- Inductive case: chain the hypothesis with congSuc and plusZeroRight.
-addSucL (suc m) = {!!}
+-- We also need that m + suc n = suc (m + n) for all m and n; again, we record this property via an independent proof step which acts as a lemma.
+plusSucLeft : (m n : Nat) → m + suc n ≡ suc (m + n)
+plusSucLeft = {!!}
