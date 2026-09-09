@@ -4,10 +4,13 @@ Closing individual holes: the "Prove" stage.
 Agda has no Sledgehammer, so this plays the same role with what Agda does
 have, in increasing order of cost:
 
-    1. a fixed list of cheap candidate terms (refl, trivial rewrites, ...),
-       mirroring the paper's "Sledgehammer + heuristics" baseline where 11
-       stock tactics are tried before the expensive tool;
-    2. Agda's own automated prover (Mimer / Agsy) via `Cmd_autoOne`;
+    1. a fixed list of cheap candidate terms (refl, ...), mirroring the
+       paper's "Sledgehammer + heuristics" baseline where stock tactics are
+       tried before the expensive tool;
+    2. Agda's own automated prover (Mimer) via `Cmd_autoOne`, *with every
+       lemma in scope passed as a hint*. Bare Mimer only uses local variables
+       and constructors; hinted Mimer closes e.g.
+       `trans (cong suc (addComm n m)) (sym (plusSucRight m n))` in a second;
     3. the language model, with the goal type, the local context, and the
        informal step the hole came from.
 
@@ -22,10 +25,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.config import AGDA_IMPORT_PATH
-from core.agda_client import AgdaSession, check_sketch
+from core.config import AGDA_IMPORT_PATH, MIMER_TIMEOUT_SECONDS
+from core.agda_client import AgdaSession, AutoError, check_sketch
 from core.llm_client import ProofLLM
 from core.proof_state import GapResult, SketchGap
+from core.run_log import run_logger
 from util.sketch_ops import count_holes, excerpt_around_hole, replace_hole
 
 
@@ -37,11 +41,12 @@ DEFAULT_TACTICS: tuple[str, ...] = (
 BAD_TERM = re.compile(r"(?:^|[\s(])[_?](?:[\s)]|$)")
 
 
-
 @dataclass
 class HammerConfig:
     tactics: tuple[str, ...] = DEFAULT_TACTICS
     use_mimer: bool = True
+    mimer_timeout: int = MIMER_TIMEOUT_SECONDS
+    mimer_candidates: int = 10   # how many of Mimer's listed solutions to typecheck
     llm_attempts: int = 2
     import_path: str = AGDA_IMPORT_PATH
     extra_tactics: list[str] = field(default_factory=list)
@@ -57,18 +62,38 @@ def close_gap(
     llm: ProofLLM | None = None,
     config: HammerConfig | None = None,
     available_names: str = "",
+    mimer_hints: list[str] | None = None,
+    target_name: str = "",
     verbose: bool = True,
 ) -> GapResult:
     """
     Try to close one hole in `source`. Does not mutate `agda_file` on failure:
     the caller owns the file contents and gets the winning term back.
+
+    `mimer_hints` are names Mimer may apply (lemmas, `sym`, `trans`, ...). They
+    must all be in scope in `agda_file` or Agda rejects the whole command.
     """
 
     config = config or HammerConfig()
     baseline_holes = count_holes(source)
+    log = run_logger()
+
+    log.event(
+        "gap_start",
+        hole_index=gap.hole_index,
+        goal_id=gap.goal_id,
+        goal_type=gap.goal_type,
+        context=gap.context,
+        informal_hint=gap.informal_hint,
+        n_holes=baseline_holes,
+    )
 
     def attempt(term: str, method: str) -> GapResult | None:
         if not _is_admissible(term):
+            log.event(
+                "gap_candidate", hole_index=gap.hole_index, method=method,
+                term=term, ok=False, output="inadmissible",
+            )
             return GapResult(
                 success=False, gap=gap, method=method,
                 output=f"Inadmissible term: {term!r}",
@@ -82,6 +107,11 @@ def close_gap(
             import_path=config.import_path,
         )
 
+        log.event(
+            "gap_candidate", hole_index=gap.hole_index, method=method,
+            term=term, ok=ok, output=output,
+        )
+
         if verbose:
             status = "ok" if ok else "rejected"
             print(f"    [{method}] {term!r} -> {status}")
@@ -91,25 +121,50 @@ def close_gap(
 
         return GapResult(success=False, gap=gap, method=method, output=output)
 
+    def done(result: GapResult) -> GapResult:
+        log.event(
+            "gap_result",
+            hole_index=gap.hole_index,
+            goal_type=gap.goal_type,
+            success=result.success,
+            method=result.method,
+            solution=result.solution,
+            output=result.output,
+        )
+        return result
+
     failures: list[str] = []
 
     # 1. cheap tactics
     for tactic in config.all_tactics():
         result = attempt(tactic, f"tactic:{tactic}")
         if result and result.success:
-            return result
+            return done(result)
         if result:
             failures.append(f"{tactic}: {_first_lines(result.output)}")
 
-    # 2. Agda's own automation
+    # 2. Agda's own automation, hinted with everything in scope. Mimer does
+    #    not run the termination checker, so take its candidate list and keep
+    #    going until one survives a real typecheck.
     if config.use_mimer and gap.goal_id is not None:
-        term = _try_mimer(agda_file, gap.goal_id, config.import_path)
+        terms, note = _try_mimer(
+            agda_file, gap.goal_id, config.import_path,
+            hints=mimer_hints or [], timeout=config.mimer_timeout,
+        )
 
-        if term:
-            result = attempt(term, "mimer")
+        log.event(
+            "mimer", hole_index=gap.hole_index, goal_id=gap.goal_id,
+            hints=mimer_hints or [], terms=terms, note=note,
+        )
+
+        if verbose and not terms:
+            print(f"    [mimer] no solution ({note})")
+
+        for rank, term in enumerate(terms[: config.mimer_candidates]):
+            result = attempt(term, "mimer" if rank == 0 else f"mimer#{rank}")
 
             if result and result.success:
-                return result
+                return done(result)
 
             if result:
                 failures.append(f"mimer ({term}): {_first_lines(result.output)}")
@@ -118,7 +173,7 @@ def close_gap(
     if llm is not None:
         previous: list[str] = []
 
-        for _ in range(config.llm_attempts):
+        for attempt_index in range(config.llm_attempts):
             try:
                 term = llm.fill_gap(
                     goal_type=gap.goal_type,
@@ -127,15 +182,18 @@ def close_gap(
                     excerpt=excerpt_around_hole(source, gap.hole_index),
                     available_names=available_names,
                     previous_errors=previous,
+                    target_name=target_name,
+                    attempt=attempt_index,
                 )
             except (ValueError, RuntimeError) as error:
                 previous.append(str(error))
+                failures.append(f"llm: {error}")
                 continue
 
             result = attempt(term, "llm")
 
             if result and result.success:
-                return result
+                return done(result)
 
             if result:
                 previous.append(
@@ -143,12 +201,12 @@ def close_gap(
                 )
                 failures.append(f"llm ({term}): {_first_lines(result.output)}")
 
-    return GapResult(
+    return done(GapResult(
         success=False,
         gap=gap,
         method="failed",
         output="No candidate closed the hole.\n" + "\n".join(failures[-6:]),
-    )
+    ))
 
 
 def _candidate_typechecks(
@@ -173,6 +231,14 @@ def _candidate_typechecks(
     except IndexError as error:
         return False, str(error)
 
+    remaining = count_holes(candidate_source)
+
+    if remaining != baseline_holes - 1:
+        return False, (
+            f"Term did not close exactly one hole "
+            f"({baseline_holes} -> {remaining})."
+        )
+
     agda_file.write_text(candidate_source)
 
     try:
@@ -184,37 +250,46 @@ def _candidate_typechecks(
     if result.kind == "error":
         return False, result.message
 
-    remaining = count_holes(candidate_source)
-
-    if remaining != baseline_holes - 1:
-        return False, (
-            f"Term did not close exactly one hole "
-            f"({baseline_holes} -> {remaining})."
-        )
-
     return True, ""
 
 
-def _try_mimer(agda_file: Path, goal_id: int, import_path: str) -> str | None:
+def _try_mimer(
+    agda_file: Path,
+    goal_id: int,
+    import_path: str,
+    hints: list[str],
+    timeout: int,
+) -> tuple[list[str], str]:
+    """Returns (candidate terms best-first, note explaining an empty list)."""
+
     try:
         with AgdaSession(agda_file, import_path=import_path) as session:
             load = session.load()
 
             if load.kind != "goal":
-                return None
+                return [], f"file did not load with goals ({load.kind})"
 
-            return session.auto(goal_id)
-    except Exception:
+            try:
+                terms = session.auto_list(goal_id, hints=hints, timeout=timeout)
+            except AutoError as error:
+                # Usually an out-of-scope hint. Retry with no hints so a bad
+                # name never costs us the whole hammer step.
+                if not hints:
+                    return [], f"auto error: {error}"
+
+                terms = session.auto_list(goal_id, hints=[], timeout=timeout)
+                return terms, f"hints rejected ({_first_lines(str(error), 2)}); retried bare"
+
+            return terms, "ok" if terms else "no solution"
+    except Exception as error:
         # Mimer/Agsy availability and the exact JSON shape vary by Agda
         # version; never let that take down the pipeline.
-        return None
+        return [], f"{type(error).__name__}: {error}"
 
 
 def _first_lines(text: str, n: int = 6) -> str:
     lines = [line for line in text.splitlines() if line.strip()]
     return "\n".join(lines[:n])
-
-BAD_TERM = re.compile(r"(?:^|[\s(])[_?](?:[\s)]|$)")
 
 
 def _is_admissible(term: str) -> bool:

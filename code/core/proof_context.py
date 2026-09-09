@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from core.agda_client import load_agda_and_get_first_goal
+from core.config import AGDA_IMPORT_PATH
 from core.proof_state import AgdaGoal, AgdaLoadResult
 
 
@@ -95,17 +96,22 @@ def get_signature_line(source: str, target_name: str) -> str:
 
 def infer_target_name_from_first_hole(
     agda_file: Path,
+    import_path: str = AGDA_IMPORT_PATH,
 ) -> tuple[str, AgdaGoal, AgdaLoadResult]:
     """
     Load an Agda file, get the first goal, and infer the enclosing
     top-level declaration name from the goal range.
+
+    `import_path` must be the root the file lives under. Loading a file from
+    one tree with another tree on the include path makes Agda see two
+    candidates for the module and refuse with "Ambiguous module name".
 
     Returns:
         (target_name, goal, load_result)
     """
 
     source = agda_file.read_text()
-    load_result = load_agda_and_get_first_goal(agda_file)
+    load_result = load_agda_and_get_first_goal(agda_file, import_path=import_path)
 
     if load_result.kind == "error":
         raise ValueError(

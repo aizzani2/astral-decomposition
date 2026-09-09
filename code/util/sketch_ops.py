@@ -17,12 +17,26 @@ from core.proof_state import SketchGap
 
 
 HOLE_RE = re.compile(r"\{!.*?!\}|(?<![\w?])\?(?![\w?])", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+
+
+def mask_comments(source: str) -> str:
+    """
+    Blank out `-- ...` line comments, preserving length so character spans
+    computed on the masked text are valid in the original.
+
+    The sketch prompt asks for an informal comment above every hole, and
+    those comments routinely contain a `?` ("Why is this true?"), which would
+    otherwise count as a hole and misalign holes with Agda's goals.
+    """
+
+    return LINE_COMMENT_RE.sub(lambda m: " " * len(m.group(0)), source)
 
 
 def find_holes(source: str) -> list[tuple[int, int]]:
     """Return (start, end) character spans of every hole, in source order."""
 
-    return [match.span() for match in HOLE_RE.finditer(source)]
+    return [match.span() for match in HOLE_RE.finditer(mask_comments(source))]
 
 
 def count_holes(source: str) -> int:
@@ -213,3 +227,46 @@ def context_signatures(agda_root: Path, exclude: frozenset[str] = frozenset()) -
     ]
 
     return available_signatures(*sources)
+
+
+def hint_names(*sources: str, exclude: frozenset[str] = frozenset()) -> list[str]:
+    """
+    Names Mimer may be told to use, from the same signature scan as
+    `available_signatures`. Data types are skipped (they are not proof terms);
+    constructors are harmless but useless, so they are skipped too when the
+    line is indented under a `data`.
+    """
+
+    names: list[str] = []
+    seen: set[str] = set()
+    sig = re.compile(r"^([^\s(){};.]+)\s*:\s+(.*)$")
+
+    for source in sources:
+        in_data = False
+
+        for line in (source or "").splitlines():
+            stripped = line.strip()
+
+            if not stripped or stripped.startswith("--"):
+                continue
+
+            if not line.startswith((" ", "\t")):
+                in_data = stripped.startswith(("data ", "record "))
+
+            if in_data or " = " in stripped:
+                continue
+
+            match = sig.match(stripped)
+
+            if not match:
+                continue
+
+            name = match.group(1)
+
+            if name in seen or name in exclude or name.startswith("--"):
+                continue
+
+            seen.add(name)
+            names.append(name)
+
+    return names

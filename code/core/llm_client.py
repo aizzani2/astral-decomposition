@@ -8,19 +8,21 @@ Three model-facing operations, in the order the paper uses them:
     fill_gap               one goal type + context       -> one Agda term
 
 Everything is transport-agnostic: `LLMBackend` is a one-method protocol, so
-swapping Ollama for the autoformalizer (Kevin) or a hosted model is a
-constructor argument, not a rewrite. Nothing below knows about HTTP.
+swapping Ollama for Claude or a hosted autoformalizer is a constructor
+argument, not a rewrite. Every call goes through `ProofLLM._generate`, which
+is the single place model I/O is logged.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Protocol
+import time
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 import requests
 
-from core import prompts
+from core import config, prompts
 from core.proof_state import (
     ContextEntry,
     InformalProof,
@@ -29,6 +31,7 @@ from core.proof_state import (
     LLMHelperDeclResult,
     ProofObligation,
 )
+from core.run_log import run_logger
 
 
 # ---------------------------------------------------------------------------
@@ -36,44 +39,176 @@ from core.proof_state import (
 # ---------------------------------------------------------------------------
 
 
+@dataclass
+class LLMResponse:
+    """What a backend hands back. `text` is the answer; the rest is for the log."""
+
+    text: str
+    thinking: str = ""
+    model: str = ""
+    prompt_tokens: int | None = None
+    output_tokens: int | None = None
+    duration_s: float = 0.0
+    stop_reason: str = ""
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
 class LLMBackend(Protocol):
-    def generate(self, prompt: str, timeout: int = 180, stop: list[str] | None = None) -> str:
+    name: str
+    model: str
+
+    def generate(
+        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+    ) -> LLMResponse:
         ...
 
 
 @dataclass
 class OllamaBackend:
-    model: str = "qwen2.5-coder:14b"
-    base_url: str = "http://localhost:11434"
-    temperature: float = 0.6
-    top_p: float = 0.95
+    model: str = config.DEFAULT_MODEL
+    base_url: str = config.OLLAMA_BASE_URL
+    temperature: float = config.OLLAMA_TEMPERATURE
+    top_p: float = config.OLLAMA_TOP_P
+    think: bool | None = config.OLLAMA_THINK
+    num_ctx: int = config.OLLAMA_NUM_CTX
+    num_predict: int | None = None
+    name: str = "ollama"
 
-    def generate(self, prompt: str, timeout: int = 180, stop: list[str] | None = None) -> str:
+    def generate(
+        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+    ) -> LLMResponse:
+        num_predict = self.num_predict
+
+        if num_predict is None:
+            num_predict = (
+                config.OLLAMA_NUM_PREDICT_THINKING if self.think
+                else config.OLLAMA_NUM_PREDICT
+            )
+
         options: dict[str, object] = {
             "temperature": self.temperature,
             "top_p": self.top_p,
+            "num_ctx": self.num_ctx,
+            "num_predict": num_predict,
         }
 
-        if stop:
+        # Ollama applies stop sequences to the thinking stream too, and a
+        # thinking model routinely writes the closing tag while planning, which
+        # truncates the whole response to nothing. Parsing tolerates a missing
+        # closing tag, so in thinking mode rely on num_predict instead.
+        if stop and not self.think:
             options["stop"] = stop
 
+        body: dict[str, object] = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": options,
+        }
+
+        if self.think is not None:
+            body["think"] = self.think
+
+        started = time.monotonic()
         response = requests.post(
             f"{self.base_url.rstrip('/')}/api/generate",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": options,
-            },
+            json=body,
             timeout=timeout,
         )
+        duration = time.monotonic() - started
 
         if response.status_code != 200:
             raise RuntimeError(
                 f"Ollama returned {response.status_code}:\n{response.text}"
             )
 
-        return response.json()["response"]
+        data = response.json()
+
+        return LLMResponse(
+            text=data.get("response", ""),
+            thinking=data.get("thinking", "") or "",
+            model=data.get("model", self.model),
+            prompt_tokens=data.get("prompt_eval_count"),
+            output_tokens=data.get("eval_count"),
+            duration_s=duration,
+            stop_reason=data.get("done_reason", ""),
+            extra={
+                "think": self.think,
+                "options": options,
+                "total_duration_ns": data.get("total_duration"),
+                "load_duration_ns": data.get("load_duration"),
+            },
+        )
+
+
+@dataclass
+class AnthropicBackend:
+    """
+    Claude via the official `anthropic` SDK (optional dependency:
+    `pip install anthropic`). Credentials come from the environment
+    (ANTHROPIC_API_KEY or an `ant auth login` profile).
+
+    Current Claude models take adaptive thinking and an `effort` level rather
+    than a token budget or sampling temperature, so those are the only knobs.
+    """
+
+    model: str = config.ANTHROPIC_DEFAULT_MODEL
+    effort: str = config.ANTHROPIC_EFFORT
+    max_tokens: int = config.ANTHROPIC_MAX_TOKENS
+    name: str = "anthropic"
+
+    def __post_init__(self) -> None:
+        try:
+            import anthropic
+        except ImportError as error:
+            raise RuntimeError(
+                "The Anthropic backend needs the `anthropic` package: "
+                "pip install anthropic"
+            ) from error
+
+        self._client = anthropic.Anthropic()
+
+    def generate(
+        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+    ) -> LLMResponse:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": self.effort},
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        if stop:
+            kwargs["stop_sequences"] = stop
+
+        started = time.monotonic()
+        response = self._client.with_options(timeout=float(timeout)).messages.create(**kwargs)
+        duration = time.monotonic() - started
+
+        if response.stop_reason == "refusal":
+            details = getattr(response, "stop_details", None)
+            raise RuntimeError(f"Claude refused the request: {details}")
+
+        text = "".join(
+            block.text for block in response.content if block.type == "text"
+        )
+        thinking = "".join(
+            getattr(block, "thinking", "") or ""
+            for block in response.content
+            if block.type == "thinking"
+        )
+
+        return LLMResponse(
+            text=text,
+            thinking=thinking,
+            model=response.model,
+            prompt_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            duration_s=duration,
+            stop_reason=response.stop_reason or "",
+            extra={"effort": self.effort, "response_id": response.id},
+        )
 
 
 @dataclass
@@ -82,8 +217,12 @@ class EchoBackend:
 
     responses: list[str]
     calls: list[str] | None = None
+    model: str = "echo"
+    name: str = "echo"
 
-    def generate(self, prompt: str, timeout: int = 180, stop: list[str] | None = None) -> str:
+    def generate(
+        self, prompt: str, timeout: int = 180, stop: list[str] | None = None
+    ) -> LLMResponse:
         if self.calls is None:
             self.calls = []
 
@@ -92,7 +231,28 @@ class EchoBackend:
         if not self.responses:
             raise RuntimeError("EchoBackend ran out of scripted responses.")
 
-        return self.responses.pop(0)
+        return LLMResponse(text=self.responses.pop(0), model=self.model)
+
+
+def make_backend(
+    model: str = config.DEFAULT_MODEL,
+    backend: str = config.DEFAULT_BACKEND,
+    base_url: str = config.OLLAMA_BASE_URL,
+    think: bool | None = config.OLLAMA_THINK,
+    effort: str = config.ANTHROPIC_EFFORT,
+) -> LLMBackend:
+    """Pick a backend by name, or by the model id when backend == "auto"."""
+
+    if backend == "auto":
+        backend = "anthropic" if model.startswith("claude") else "ollama"
+
+    if backend == "ollama":
+        return OllamaBackend(model=model, base_url=base_url, think=think)
+
+    if backend == "anthropic":
+        return AnthropicBackend(model=model, effort=effort)
+
+    raise ValueError(f"Unknown backend: {backend!r} (expected ollama, anthropic, auto)")
 
 
 # ---------------------------------------------------------------------------
@@ -112,12 +272,60 @@ class ProofLLM:
     def __init__(
         self,
         backend: LLMBackend | None = None,
-        model: str = "qwen2.5-coder:7b",
-        base_url: str = "http://localhost:11434",
-        timeout: int = 180,
+        model: str = config.DEFAULT_MODEL,
+        base_url: str = config.OLLAMA_BASE_URL,
+        timeout: int = config.LLM_TIMEOUT_SECONDS,
     ) -> None:
-        self.backend = backend or OllamaBackend(model=model, base_url=base_url)
+        self.backend = backend or make_backend(model=model, base_url=base_url)
         self.timeout = timeout
+        self.calls = 0
+
+    @property
+    def model(self) -> str:
+        return getattr(self.backend, "model", "?")
+
+    def _generate(
+        self, stage: str, prompt: str, stop: list[str] | None = None, **tags: Any
+    ) -> str:
+        """The one place model calls happen, so the one place they are logged."""
+
+        self.calls += 1
+        started = time.monotonic()
+
+        try:
+            response = self.backend.generate(prompt, timeout=self.timeout, stop=stop)
+        except Exception as error:
+            run_logger().event(
+                "llm_call",
+                stage=stage,
+                model=self.model,
+                backend=getattr(self.backend, "name", "?"),
+                prompt=prompt,
+                stop=stop,
+                error=f"{type(error).__name__}: {error}",
+                duration_s=round(time.monotonic() - started, 3),
+                **tags,
+            )
+            raise
+
+        run_logger().event(
+            "llm_call",
+            stage=stage,
+            model=response.model or self.model,
+            backend=getattr(self.backend, "name", "?"),
+            prompt=prompt,
+            stop=stop,
+            text=response.text,
+            thinking=response.thinking,
+            prompt_tokens=response.prompt_tokens,
+            output_tokens=response.output_tokens,
+            duration_s=round(response.duration_s, 3),
+            stop_reason=response.stop_reason,
+            extra=response.extra,
+            **tags,
+        )
+
+        return response.text
 
     # -- stage 1: draft ----------------------------------------------------
 
@@ -126,6 +334,7 @@ class ProofLLM:
         informal_statement: str,
         formal_signature: str,
         extra_context: str = "",
+        sample_index: int = 0,
     ) -> InformalProof:
         prompt = prompts.DRAFT_TEMPLATE.format(
             system=prompts.DRAFT_SYSTEM,
@@ -135,10 +344,8 @@ class ProofLLM:
             extra_context=(extra_context + "\n") if extra_context else "",
         )
 
-        raw = self.backend.generate(
-            prompt,
-            timeout=self.timeout,
-            stop=["</INFORMAL_PROOF>"],
+        raw = self._generate(
+            "draft", prompt, stop=["</INFORMAL_PROOF>"], sample_index=sample_index
         )
 
         steps = parse_informal_steps(raw)
@@ -158,17 +365,29 @@ class ProofLLM:
     ) -> list[InformalProof]:
         drafts: list[InformalProof] = []
 
-        for _ in range(n_samples):
+        for index in range(n_samples):
             try:
-                drafts.append(
-                    self.draft_informal_proof(
-                        informal_statement=informal_statement,
-                        formal_signature=formal_signature,
-                        extra_context=extra_context,
-                    )
+                draft = self.draft_informal_proof(
+                    informal_statement=informal_statement,
+                    formal_signature=formal_signature,
+                    extra_context=extra_context,
+                    sample_index=index,
                 )
-            except ValueError:
+            except (ValueError, RuntimeError) as error:
+                run_logger().event(
+                    "draft", sample_index=index, ok=False, error=str(error)
+                )
                 continue
+
+            run_logger().event(
+                "draft",
+                sample_index=index,
+                ok=True,
+                steps=draft.steps,
+                n_lemma_steps=sum(1 for s in draft.steps if s.hard),
+                raw=draft.raw,
+            )
+            drafts.append(draft)
 
         return drafts
 
@@ -184,6 +403,7 @@ class ProofLLM:
         previous_errors: list[str] | None = None,
         helpers_module: str = "Tests.Helpers",
         context_module: str = "Tests.Context",
+        attempt: int = 0,
     ) -> tuple[list[ProofObligation], str, str]:
         """
         Returns (lemma obligations, sketch text with holes, raw response).
@@ -202,7 +422,7 @@ class ProofLLM:
             error_text=format_previous_errors(previous_errors or []),
         )
 
-        raw = self.backend.generate(prompt, timeout=self.timeout)
+        raw = self._generate("sketch", prompt, stop=["</AGDA_SKETCH>"], attempt=attempt)
 
         # The prompt ends with an open <AGDA_LEMMAS> tag, so the model's
         # continuation is the body. Re-attach it before parsing.
@@ -213,6 +433,8 @@ class ProofLLM:
 
         if sketch is None:
             sketch = strip_markdown_code_fences(text).strip()
+        else:
+            sketch = strip_markdown_code_fences(sketch).strip()
 
         if not sketch.strip():
             raise ValueError("Model returned an empty <AGDA_SKETCH> block.")
@@ -231,7 +453,8 @@ class ProofLLM:
         excerpt: str,
         available_names: str = "",
         previous_errors: list[str] | None = None,
-        target_name: str = ""
+        target_name: str = "",
+        attempt: int = 0,
     ) -> str:
         prompt = prompts.GAP_TEMPLATE.format(
             goal_type=goal_type.strip(),
@@ -240,10 +463,10 @@ class ProofLLM:
             available_names=available_names or "(none listed)",
             excerpt=excerpt,
             error_text=format_previous_errors(previous_errors or []),
-            target_name=target_name,
+            target_name=target_name or "the current function",
         )
 
-        raw = self.backend.generate(prompt, timeout=self.timeout, stop=["</AGDA_TERM>"])
+        raw = self._generate("gap", prompt, stop=["</AGDA_TERM>"], attempt=attempt)
         text = "<AGDA_TERM>" + raw if "<AGDA_TERM>" not in raw else raw
 
         term = extract_between_tags(text, "AGDA_TERM")
@@ -251,7 +474,7 @@ class ProofLLM:
         if term is None:
             term = strip_markdown_code_fences(raw)
 
-        term = term.strip()
+        term = strip_markdown_code_fences(term).strip()
 
         if not term:
             raise ValueError("Model returned an empty term for the hole.")
@@ -267,27 +490,38 @@ class ProofLLM:
         goal_type: str,
         context: list[ContextEntry],
         context_module: str = "Tests.Context",
+        informal_hint: str = "",
+        available_names: str = "",
+        target_name: str = "",
     ) -> str:
         prompt = prompts.LEMMA_FROM_GAP_TEMPLATE.format(
             lemma_name=lemma_name,
             goal_type=goal_type.strip(),
             context="\n".join(f"  {e.name} : {e.type}" for e in context) or "  (empty)",
             context_module=context_module,
+            informal_hint=informal_hint.strip() or "(none recorded)",
+            available_names=available_names or "(none listed)",
+            target_name=target_name or "the current function",
         )
 
-        raw = self.backend.generate(prompt, timeout=self.timeout, stop=["</AGDA_SIG>"])
+        raw = self._generate("lemma_signature", prompt, stop=["</AGDA_SIG>"])
         text = raw
 
         if "<AGDA_SIG>" in raw:
             text = extract_between_tags(raw, "AGDA_SIG") or raw
 
-        first_line = next(
-            (line.strip() for line in text.splitlines() if line.strip()),
-            "",
-        )
+        text = strip_markdown_code_fences(text)
+
+        # First line that looks like a type: models wrap in fences, echo the
+        # tag, or add a sentence first.
+        candidates = [line.strip() for line in text.splitlines() if line.strip()]
+        typed = [c for c in candidates if "→" in c or "->" in c or "≡" in c]
+        first_line = (typed or candidates or [""])[0]
 
         if first_line.startswith(f"{lemma_name} :"):
             first_line = first_line.split(":", 1)[1]
+        elif first_line.startswith(":"):
+            first_line = first_line[1:]
 
         signature = first_line.strip()
 
@@ -343,7 +577,7 @@ Agda reported this goal:
 Explain briefly, then give the replacement declaration.
 """
 
-        full_response = self.backend.generate(prompt, timeout=self.timeout).strip()
+        full_response = self._generate("direct", prompt).strip()
 
         return LLMDeclResult(
             declaration=extract_agda_declaration(full_response),
@@ -392,7 +626,7 @@ Hard goal type:
 Explain briefly, then give both blocks.
 """
 
-        full_response = self.backend.generate(prompt, timeout=self.timeout).strip()
+        full_response = self._generate("decompose", prompt).strip()
 
         return LLMHelperDeclResult(
             helpers=extract_agda_helpers(full_response),
@@ -419,9 +653,13 @@ _ATTR_RE = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 
 
 def parse_informal_steps(text: str) -> list[InformalStep]:
+    # The prompt ends with an open <INFORMAL_PROOF>, so the model continues
+    # with the body and frequently emits a stray "<INFORMAL_PROOF>" *after*
+    # the steps in place of the closing tag. Steps are unambiguous, so scan
+    # the whole text for them; only the loose-prose fallback needs the body.
     body = extract_between_tags(text, "INFORMAL_PROOF")
 
-    if body is None:
+    if body is None or not _STEP_RE.search(body):
         body = text
 
     steps: list[InformalStep] = []
@@ -498,7 +736,7 @@ def parse_lemma_signatures(
     lemmas: list[ProofObligation] = []
     seen: set[str] = set()
 
-    for line in block.strip().splitlines():
+    for line in strip_markdown_code_fences(block).strip().splitlines():
         line = line.strip()
 
         if not line or line.startswith("--") or line == "postulate":
@@ -579,18 +817,14 @@ def extract_between_tags(text: str, tag: str) -> str | None:
 
 
 def strip_markdown_code_fences(text: str) -> str:
+    """Drop ``` fences anywhere in the text (models add them despite the tags)."""
+
     lines = text.strip().splitlines()
 
     if not lines:
         return ""
 
-    if lines[0].strip().startswith("```"):
-        lines = lines[1:]
-
-    if lines and lines[-1].strip().startswith("```"):
-        lines = lines[:-1]
-
-    return "\n".join(lines)
+    return "\n".join(line for line in lines if not line.strip().startswith("```"))
 
 
 def format_previous_errors(previous_errors: list[str]) -> str:

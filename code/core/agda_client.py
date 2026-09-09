@@ -17,6 +17,7 @@ Two things this adds over the previous single-shot version:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import queue
 import threading
@@ -25,9 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from core.config import (
-  AGDA_IMPORT_PATH,
-  AGDA_TIMEOUT_SECONDS,
+    AGDA_IMPORT_PATH,
+    AGDA_TIMEOUT_SECONDS,
+    MIMER_TIMEOUT_SECONDS,
 )
+from core.run_log import run_logger
 from core.proof_state import (
     AgdaCheckResult,
     AgdaGoal,
@@ -71,6 +74,7 @@ class AgdaSession:
         import_path: str = AGDA_IMPORT_PATH,
         timeout: int = AGDA_TIMEOUT_SECONDS,
     ) -> None:
+        timeout = max(timeout, MIMER_TIMEOUT_SECONDS + 10)
         self.filename = filename
         self.absolute = str(filename.resolve())
         self.import_path = import_path
@@ -122,7 +126,6 @@ class AgdaSession:
     # -- low level ---------------------------------------------------------
 
     def _send(self, command: str) -> None:
-        payload = f'IOTCM "{self.absolute}" None Direct ({command})\n'
         if self.proc is None or self.proc.stdin is None:
             raise RuntimeError("Agda session is not running.")
 
@@ -191,16 +194,26 @@ class AgdaSession:
 
         return _interpret_context(objects)
 
-    def auto(self, goal_id: int) -> str | None:
+    def auto(
+        self,
+        goal_id: int,
+        hints: list[str] | None = None,
+        timeout: int = MIMER_TIMEOUT_SECONDS,
+    ) -> str | None:
         """
         Run Agda's automated prover (Mimer in Agda >= 2.6.4, Agsy before that)
         on one hole. Returns the proof term it found, or None.
 
-        This is our stand-in for Sledgehammer. It is much weaker than
-        Sledgehammer, which is exactly why the sketch should leave small holes.
+        This is our stand-in for Sledgehammer. Mimer only uses local variables,
+        constructors and recursive calls on its own; every lemma it may apply
+        has to be passed by name in `hints`. A hint that is not in scope makes
+        Agda return an Error, so callers should filter hints and retry bare.
         """
 
-        self._send(f'Cmd_autoOne {goal_id} noRange ""')
+        args = [f"-t {int(timeout)}"] + [h for h in (hints or []) if h.strip()]
+        argument = " ".join(args)
+
+        self._send(f'Cmd_autoOne {goal_id} noRange "{argument}"')
 
         objects = self._read_objects(
             lambda objs: any(
@@ -214,6 +227,59 @@ class AgdaSession:
         )
 
         return _interpret_auto(objects)
+
+    def auto_list(
+        self,
+        goal_id: int,
+        hints: list[str] | None = None,
+        timeout: int = MIMER_TIMEOUT_SECONDS,
+        skip: int = 0,
+    ) -> list[str]:
+        """
+        Mimer's list mode (`-l`): up to ten candidate terms, best first.
+
+        Mimer only typechecks candidates; it does not run the termination
+        checker, so its top pick can be a non-structural recursive call that
+        Agda then rejects. Trying the rest of the list in order is how the
+        hammer recovers from that.
+        """
+
+        args = [f"-t {int(timeout)}", "-l"]
+
+        if skip:
+            args.append(f"-s {int(skip)}")
+
+        args += [h for h in (hints or []) if h.strip()]
+
+        self._send(f'Cmd_autoOne {goal_id} noRange "{" ".join(args)}"')
+
+        objects = self._read_objects(
+            lambda objs: any(
+                o.get("kind") == "GiveAction"
+                or (
+                    o.get("kind") == "DisplayInfo"
+                    and o.get("info", {}).get("kind") in ("Auto", "Error")
+                )
+                for o in objs
+            )
+        )
+
+        error = _auto_error(objects)
+
+        if error is not None:
+            raise AutoError(error)
+
+        for obj in objects:
+            if obj.get("kind") == "GiveAction":
+                # A single solution comes back as a give, not a listing.
+                result = obj.get("giveResult", {})
+                term = result.get("str") if isinstance(result, dict) else result
+                return [term.strip()] if isinstance(term, str) and term.strip() else []
+
+            if obj.get("kind") == "DisplayInfo" and obj.get("info", {}).get("kind") == "Auto":
+                return parse_auto_listing(obj["info"].get("info") or "")
+
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +428,58 @@ def _interpret_context(objects: list[dict[str, Any]]) -> list[ContextEntry]:
     return entries
 
 
+def parse_auto_listing(text: str) -> list[str]:
+    """
+    Parse `Listing solution(s) 0-9\n0  term\n(continued)\n1  term ...`.
+    Continuation lines of a multi-line term do not start with an index.
+    """
+
+    solutions: list[str] = []
+    current: list[str] = []
+    index_line = re.compile(r"^(\d+)\s{2,}(.*)$")
+
+    for line in text.splitlines():
+        if line.startswith("Listing ") or line.startswith("No solution"):
+            continue
+
+        match = index_line.match(line)
+
+        if match:
+            if current:
+                solutions.append(" ".join(current))
+            current = [match.group(2).strip()]
+        elif current and line.strip():
+            current.append(line.strip())
+
+    if current:
+        solutions.append(" ".join(current))
+
+    return solutions
+
+
+class AutoError(RuntimeError):
+    """Agda rejected the auto command itself (typically an out-of-scope hint)."""
+
+
+def _auto_error(objects: list[dict[str, Any]]) -> str | None:
+    for obj in objects:
+        if obj.get("kind") != "DisplayInfo":
+            continue
+
+        info = obj.get("info", {})
+
+        if info.get("kind") == "Error":
+            return info.get("error", {}).get("message", "") or "Unknown Agda error."
+
+    return None
+
+
 def _interpret_auto(objects: list[dict[str, Any]]) -> str | None:
+    error = _auto_error(objects)
+
+    if error is not None:
+        raise AutoError(error)
+
     for obj in objects:
         kind = obj.get("kind")
 
@@ -443,6 +560,9 @@ def check_sketch(
     this is the sketch-stage success condition.
     """
 
+    started = time.monotonic()
+    source = filename.read_text() if filename.exists() else None
+
     result = load_agda_and_get_all_goals(
         filename,
         import_path=import_path,
@@ -450,12 +570,26 @@ def check_sketch(
     )
 
     if result.kind == "error":
-        return SketchCheckResult(kind="error", message=result.message)
+        out = SketchCheckResult(kind="error", message=result.message)
+    elif result.kind == "no-goals":
+        out = SketchCheckResult(kind="complete")
+    else:
+        out = SketchCheckResult(kind="holes", goals=result.goals)
 
-    if result.kind == "no-goals":
-        return SketchCheckResult(kind="complete")
+    run_logger().event(
+        "agda_check",
+        mode="sketch",
+        file=str(filename),
+        source=source,
+        result=out.kind,
+        message=out.message,
+        n_goals=len(out.goals),
+        goals=[{"id": g.id, "type": g.type} for g in out.goals],
+        warnings=result.warnings,
+        duration_s=round(time.monotonic() - started, 3),
+    )
 
-    return SketchCheckResult(kind="holes", goals=result.goals)
+    return out
 
 
 def run_plain_agda(
@@ -463,6 +597,9 @@ def run_plain_agda(
     import_path: str = AGDA_IMPORT_PATH,
     timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaCheckResult:
+    started = time.monotonic()
+    source = filename.read_text() if filename.exists() else None
+
     try:
         result = subprocess.run(
             ["agda", "-i", import_path, str(filename)],
@@ -471,13 +608,25 @@ def run_plain_agda(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return AgdaCheckResult(
+        out = AgdaCheckResult(
             success=False,
             output=f"Agda timed out after {timeout}s on {filename}.",
             timed_out=True,
         )
+    else:
+        out = AgdaCheckResult(
+            success=result.returncode == 0,
+            output=result.stdout + result.stderr,
+        )
 
-    return AgdaCheckResult(
-        success=result.returncode == 0,
-        output=result.stdout + result.stderr,
+    run_logger().event(
+        "agda_check",
+        mode="plain",
+        file=str(filename),
+        source=source,
+        result="ok" if out.success else ("timeout" if out.timed_out else "error"),
+        message=out.output,
+        duration_s=round(time.monotonic() - started, 3),
     )
+
+    return out

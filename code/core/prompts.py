@@ -30,7 +30,7 @@ Informal statement:
 For every natural number n, n + 0 = n.
 
 Formal statement (Agda, for reference only):
-+-identityr : (n : Nat) -> n + 0 == n
++-identityr : (n : Nat) → n + 0 ≡ n
 
 <INFORMAL_PROOF>
 <STEP index="1" kind="induction">
@@ -51,7 +51,7 @@ Informal statement:
 For all natural numbers m and n, m + suc n = suc (m + n).
 
 Formal statement (Agda, for reference only):
-+-suc : (m n : Nat) -> m + suc n == suc (m + n)
++-suc : (m n : Nat) → m + suc n ≡ suc (m + n)
 
 <INFORMAL_PROOF>
 <STEP index="1" kind="induction">
@@ -73,7 +73,7 @@ Informal statement:
 Addition of natural numbers is commutative: m + n = n + m.
 
 Formal statement (Agda, for reference only):
-+-comm : (m n : Nat) -> m + n == n + m
++-comm : (m n : Nat) → m + n ≡ n + m
 
 <INFORMAL_PROOF>
 <STEP index="1" kind="lemma" name="plusZeroRight">
@@ -120,6 +120,9 @@ Rules:
   own standalone proof. Prefer this for anything needing its own induction.
 - Keep each step to one idea. Small steps are easier to formalise than big ones.
 - Do not write Agda code inside the steps.
+- Write each step once, as a finished answer. Do not deliberate, revise, or
+  second-guess inside the steps; a step is a statement, not a search.
+- Close the block with </INFORMAL_PROOF> and stop.
 
 <INFORMAL_PROOF>
 """
@@ -144,13 +147,13 @@ Informal proof:
 3. [case] Inductive case: rewriting with the induction hypothesis gives suc n.
 
 Target signature:
-+-identityr : (n : Nat) -> n + 0 == n
++-identityr : (n : Nat) → n + 0 ≡ n
 
 <AGDA_LEMMAS>
 </AGDA_LEMMAS>
 
 <AGDA_SKETCH>
-+-identityr : (n : Nat) -> n + 0 == n
++-identityr : (n : Nat) → n + 0 ≡ n
 -- Base case: 0 + 0 reduces to 0.
 +-identityr zero = {!!}
 -- Inductive case: rewrite with the induction hypothesis.
@@ -167,15 +170,15 @@ Informal proof:
 5. [case] Inductive case: chain the hypothesis and the second lemma.
 
 Target signature:
-+-comm : (m n : Nat) -> m + n == n + m
++-comm : (m n : Nat) → m + n ≡ n + m
 
 <AGDA_LEMMAS>
-plusZeroRight : (n : Nat) -> n + 0 == n
-plusSucRight : (m n : Nat) -> m + suc n == suc (m + n)
+plusZeroRight : (n : Nat) → n + 0 ≡ n
+plusSucRight : (m n : Nat) → m + suc n ≡ suc (m + n)
 </AGDA_LEMMAS>
 
 <AGDA_SKETCH>
-+-comm : (m n : Nat) -> m + n == n + m
++-comm : (m n : Nat) → m + n ≡ n + m
 -- Base case: 0 + n is n, and n + 0 is n by plusZeroRight.
 +-comm zero n = {!!}
 -- Inductive case: chain the induction hypothesis with plusSucRight.
@@ -198,7 +201,8 @@ Informal proof (each line is one step you should mirror in the sketch):
 Target signature (copy this line verbatim as the first line of the sketch):
 {signature}
 
-Names already available from the imports:
+Names already available from the imports (name : type), which the sketch and
+lemmas may use:
 {available_names}
 
 Current file (for context; you are replacing only {target_name}):
@@ -206,6 +210,7 @@ Current file (for context; you are replacing only {target_name}):
 {error_text}
 Rules for <AGDA_LEMMAS>:
 - One type signature per line, no implementations, no `postulate` keyword.
+- Lemma names must be new: do not reuse any name listed as available.
 - Only for steps marked as lemmas, or steps that need their own induction.
 - These are placed in {helpers_module}, which imports {context_module} only.
   So they may not mention names declared in the target file.
@@ -213,15 +218,22 @@ Rules for <AGDA_LEMMAS>:
 
 Rules for <AGDA_SKETCH>:
 - The first line must be exactly: {signature}
-- Write the clause structure (pattern matches, `with`, `where`, equational
-  reasoning chains) but leave every non-obvious term as a hole: {{!!}}
+- The sketch contains clauses for {target_name} ONLY. Never write clauses for
+  the lemmas: they are proved separately, later. Every clause must start with
+  `{target_name}`.
+- Write the clause structure by pattern matching on the arguments (`zero`,
+  `suc n`, ...) and leave every right-hand side as a hole: {{!!}}
+- The only hole syntax is {{!!}}. Never write `?`, `?_`, `_`, `...`, `with`,
+  or `rewrite` in the sketch.
 - Precede each hole with an Agda comment quoting the informal step it comes
   from. This alignment matters; do not drop it.
 - Prefer many small holes over one big hole. An automated prover will try to
   close each hole independently.
-- Use `suc n`, never `S n`.
+- Use `suc n`, never `S n`. Write `≡` for propositional equality and `→`
+  for arrows, exactly as the target signature does.
 - You may use the lemma names you declared in <AGDA_LEMMAS>.
 - Do not add imports. Do not redefine anything else in the file.
+- Output the two blocks and nothing else: no explanation, no markdown fences.
 
 <AGDA_LEMMAS>
 """
@@ -274,7 +286,8 @@ Rules:
 # ---------------------------------------------------------------------------
 
 LEMMA_FROM_GAP_TEMPLATE = """\
-You are turning a stuck Agda goal into a standalone lemma.
+You are helping close a stuck Agda goal by stating the ONE auxiliary lemma it
+is missing.
 
 Goal type at the hole:
 {goal_type}
@@ -282,13 +295,24 @@ Goal type at the hole:
 Variables in scope at the hole:
 {context}
 
-Write a single top-level Agda type signature named {lemma_name} that:
-- quantifies over exactly the in-scope variables the goal type actually needs,
-- has the goal type as its conclusion,
-- mentions only names available from {context_module} (not from the target file),
-- is written on one line.
+The informal step this hole corresponds to:
+{informal_hint}
 
-Output only the signature inside the tags.
+Names already available (name : type):
+{available_names}
+
+The hole is inside the definition of {target_name}, so the induction
+hypothesis (a recursive call to {target_name} on smaller arguments) is also
+available. An automated prover will combine your lemma with `trans`, `sym`,
+`cong`, the hypothesis, and the names above.
+
+Write a single top-level Agda type signature named {lemma_name} that:
+- states the missing fact, typically a simpler equation about the arguments
+  (e.g. how `+` behaves on `suc` or `zero` in the second argument);
+- does NOT merely restate the goal, and does not mention {target_name};
+- quantifies explicitly over the variables it needs, e.g. (m n : Nat) → ...;
+- uses only names available from {context_module};
+- is written on one line, with ≡ and →, no markdown, no explanation.
 
 <AGDA_SIG>
 {lemma_name} : \
