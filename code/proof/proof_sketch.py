@@ -27,12 +27,14 @@ Helpers-file discipline (this bit is easy to get wrong):
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 import re
 
-from core.agda_client import check_sketch, run_plain_agda
+from core.agda_client import AgdaSession, check_sketch, run_plain_agda
 from core.config import (
     AGDA_IMPORT_PATH,
+    AGDA_TIMEOUT_SECONDS,
     DEFAULT_MODEL,
     GAP_LLM_ATTEMPTS,
     DRAFT_SAMPLES,
@@ -42,14 +44,7 @@ from core.config import (
 from core.hammer import HammerConfig, close_gap
 from core.llm_client import ProofLLM, parse_informal_steps
 from core.proof_context import get_signature_line, infer_target_name_from_first_hole
-from core.proof_files import (
-    preserved_file,
-    append_helper_declaration,
-    append_postulates,
-    restore_file,
-    save_file,
-    write_helper_goal_file,
-)
+from core.proof_files import preserved_file, restore_file, save_file
 from core.proof_history import ProofHistory
 from core.proof_state import (
     DSPResult,
@@ -60,18 +55,22 @@ from core.proof_state import (
     SketchGap,
 )
 from core.run_log import run_logger
+from proof.holes import model_names, place_holes as place_holes_in
+from proof.layout import HelpersFileLayout, Layout
+from util.agda_source import declaration_span, parse_clauses
+from util.deproof import Decomposition, decompose
 from util.sketch_ops import (
+    HOLE_RE,
     available_signatures,
     build_gaps,
+    context_signatures,
     count_holes,
+    find_holes,
     hint_names,
     replace_hole,
-    context_signatures,
 )
-from util.source_edit import ensure_import, replace_top_level_decl
 
 
-HELPERS_IMPORT = "open import Tests.Helpers"
 HELPERS_MODULE = "Tests.Helpers"
 CONTEXT_MODULE = "Tests.Context"
 
@@ -79,28 +78,45 @@ CONTEXT_MODULE = "Tests.Context"
 # them as names or Mimer hints.
 NON_CONTEXT_FILES = frozenset({"Target", "HelperGoal", "Helpers"})
 
+# A name as Agda source spells it (operators and Unicode included).
+NAME_RE = re.compile(r"[^\s(){};]+")
 
-def prove_dsp(agda_file: Path, helpers_file: Path, *args, **kwargs) -> DSPResult:
-    original_helpers = save_file(helpers_file)
+
+def prove_dsp(
+    agda_file: Path,
+    helpers_file: Path | None = None,
+    helper_goal_file: Path | None = None,
+    layout: Layout | None = None,
+    **kwargs,
+) -> DSPResult:
+    """
+    Prove the declaration with the first hole in `agda_file`. Lemmas live
+    where `layout` says (proof/layout.py): by default in `helpers_file`, each
+    proved in `helper_goal_file`; an `InFileLayout` keeps them in the file.
+    """
+
+    layout = layout or HelpersFileLayout(helpers_file, helper_goal_file)
+    original_helpers = layout.snapshot()
 
     with preserved_file(agda_file):
         try:
-            return _prove_dsp(agda_file, helpers_file, *args, **kwargs)
+            return _prove_dsp(agda_file, layout, **kwargs)
         except BaseException:
-            restore_file(helpers_file, original_helpers)
+            layout.restore(original_helpers)
             raise
 
 
 def _prove_dsp(
     agda_file: Path,
-    helpers_file: Path,
-    helper_goal_file: Path,
+    layout: Layout,
     informal_statement: str | None = None,
     informal_proof_text: str | None = None,
     llm: ProofLLM | None = None,
     model: str = DEFAULT_MODEL,
     depth: int = 0,
     draft_samples: int = DRAFT_SAMPLES,
+    draft: bool = True,
+    target_name: str | None = None,
     **kwargs,
 ) -> DSPResult:
     llm = llm or ProofLLM(model=model)
@@ -116,12 +132,17 @@ def _prove_dsp(
             output=f"File does not exist: {agda_file}",
         )
 
-    try:
-        target_name, _goal, _load = infer_target_name_from_first_hole(
-            agda_file, import_path=import_path
-        )
-    except ValueError as error:
-        return DSPResult(success=False, target_name="<unknown>", output=str(error))
+    # Without a name, the target is the declaration with the file's first
+    # hole, so the file must load as it is. A caller that knows the target
+    # (a library theorem) need not have it load before the model writes it.
+    if target_name is None:
+        try:
+            target_name, _goal, _load = infer_target_name_from_first_hole(
+                agda_file, import_path=import_path,
+                timeout=hammer.agda_timeout if hammer is not None else AGDA_TIMEOUT_SECONDS,
+            )
+        except ValueError as error:
+            return DSPResult(success=False, target_name="<unknown>", output=str(error), stage="setup")
 
     signature_line = get_signature_line(source, target_name)
     statement = informal_statement or (
@@ -129,8 +150,12 @@ def _prove_dsp(
     )
 
     with log.scope(target=target_name, depth=depth):
+        # No drafting at all: the sketch is written from the statement alone
+        # (an ablation; recursive lemmas are then not drafted either).
+        if not draft:
+            drafts = [InformalProof(statement=statement, steps=[], raw="")]
         # A human-written proof skips drafting entirely.
-        if informal_proof_text:
+        elif informal_proof_text:
             try:
                 drafts = [
                     InformalProof(
@@ -176,18 +201,18 @@ def _prove_dsp(
 
         last: DSPResult | None = None
 
-        for draft_index, draft in enumerate(drafts):
+        for draft_index, informal_draft in enumerate(drafts):
             with log.scope(draft_index=draft_index):
                 result = _attempt_dsp(
                     agda_file=agda_file,
-                    helpers_file=helpers_file,
-                    helper_goal_file=helper_goal_file,
-                    informal=draft,
+                    layout=layout,
+                    informal=informal_draft,
                     target_name=target_name,
                     signature_line=signature_line,
                     llm=llm,
                     model=model,
                     depth=depth,
+                    draft=draft,
                     **kwargs,
                 )
 
@@ -202,8 +227,7 @@ def _prove_dsp(
 
 def _attempt_dsp(
     agda_file: Path,
-    helpers_file: Path,
-    helper_goal_file: Path,
+    layout: Layout,
     informal: InformalProof,
     target_name: str,
     signature_line: str,
@@ -215,6 +239,8 @@ def _attempt_dsp(
     depth: int = 0,
     history: ProofHistory | None = None,
     verbose: bool = True,
+    place_holes: bool = False,
+    draft: bool = True,
 ) -> DSPResult:
     llm = llm or ProofLLM(model=model)
     history = history or ProofHistory()
@@ -224,7 +250,9 @@ def _attempt_dsp(
     indent = "  " * depth
 
     def fail(stage: str, **fields) -> DSPResult:
-        result = DSPResult(success=False, target_name=target_name, informal=informal, **fields)
+        result = DSPResult(
+            success=False, target_name=target_name, informal=informal, stage=stage, **fields
+        )
         log.event("dsp_result", success=False, stage=stage, output=result.output)
         return result
 
@@ -232,7 +260,7 @@ def _attempt_dsp(
         return fail("depth", output=f"Maximum recursion depth exceeded: {max_depth}")
 
     original_source = save_file(agda_file)
-    original_helpers = save_file(helpers_file)
+    original_helpers = layout.snapshot()
 
     if original_source is None:
         return fail("io", output=f"File does not exist: {agda_file}")
@@ -246,7 +274,7 @@ def _attempt_dsp(
     # --------------------------------------------------------------- sketch
     sketch, sketch_errors = _build_sketch(
         agda_file=agda_file,
-        helpers_file=helpers_file,
+        layout=layout,
         original_source=original_source,
         target_name=target_name,
         signature_line=signature_line,
@@ -254,14 +282,15 @@ def _attempt_dsp(
         llm=llm,
         max_attempts=sketch_max_attempts,
         history=history,
-        import_path=hammer.import_path,
+        hammer=hammer,
+        place_holes=place_holes,
         verbose=verbose,
         indent=indent,
     )
 
     if sketch is None:
         restore_file(agda_file, original_source)
-        restore_file(helpers_file, original_helpers)
+        layout.restore(original_helpers)
 
         return fail(
             "sketch",
@@ -276,7 +305,7 @@ def _attempt_dsp(
 
     # ---------------------------------------------------------------- prove
     context_sigs = context_signatures(Path(hammer.import_path), exclude=NON_CONTEXT_FILES)
-    helpers_now = helpers_file.read_text() if helpers_file.exists() else ""
+    helpers_now = layout.text()
 
     names = available_signatures(sketch.source, helpers_now, context_sigs)
 
@@ -285,6 +314,10 @@ def _attempt_dsp(
     # the search blow up (5s -> no solution on a gap it otherwise closes in
     # under a second). Names local to the target file are therefore excluded.
     hints = hint_names(helpers_now, context_sigs)
+    # Names the sketch's author used are good hints too (a wrong attempt
+    # usually still reaches for the right lemmas); out-of-scope ones are
+    # dropped by the hammer when Agda rejects them.
+    hints += [n for n in model_names(sketch.raw_response, target_name) if n not in hints]
 
     log.event("prove_start", n_gaps=len(sketch.gaps), mimer_hints=hints)
 
@@ -293,54 +326,63 @@ def _attempt_dsp(
     promoted: list[ProofObligation] = []
     failed: list[GapResult] = []
 
-    for gap in sorted(sketch.gaps, key=lambda g: g.hole_index, reverse=True):
-        if verbose:
-            print(f"{indent}  gap {gap.hole_index}: {gap.goal_type[:80]}")
+    # One Agda session for the whole sketch: candidates are given to their
+    # holes instead of reloading the file for each (core/hammer.py).
+    with _sketch_session(agda_file, hammer) as session:
+        for gap in sorted(sketch.gaps, key=lambda g: g.hole_index, reverse=True):
+            if verbose:
+                print(f"{indent}  gap {gap.hole_index}: {gap.goal_type[:80]}")
 
-        result = close_gap(
-            agda_file=agda_file,
-            source=working_source,
-            gap=gap,
-            llm=llm,
-            config=hammer,
-            available_names=names,
-            mimer_hints=hints,
-            target_name=target_name,
-            verbose=verbose,
-        )
-
-        if not result.success:
-            result = _promote_gap_to_lemma(
+            result = close_gap(
                 agda_file=agda_file,
-                helpers_file=helpers_file,
                 source=working_source,
                 gap=gap,
                 llm=llm,
-                hammer=hammer,
-                existing_lemmas=sketch.lemmas + promoted,
-                target_name=target_name,
+                config=hammer,
                 available_names=names,
                 mimer_hints=hints,
+                target_name=target_name,
                 verbose=verbose,
-                indent=indent,
+                session=session,
             )
 
-            if result.success and result.method.startswith("lemma:"):
-                promoted.append(_lemma_from_method(result))
+            if not result.success:
+                result = _promote_gap_to_lemma(
+                    agda_file=agda_file,
+                    layout=layout,
+                    source=working_source,
+                    gap=gap,
+                    llm=llm,
+                    hammer=hammer,
+                    existing_lemmas=sketch.lemmas + promoted,
+                    target_name=target_name,
+                    available_names=names,
+                    mimer_hints=hints,
+                    verbose=verbose,
+                    indent=indent,
+                    session=session,
+                )
 
-        gap_results.append(result)
+                if result.success and result.method.startswith("lemma:"):
+                    promoted.append(_lemma_from_method(result))
 
-        if not result.success:
-            failed.append(result)
-            continue
+            gap_results.append(result)
 
-        working_source = replace_hole(
-            working_source, gap.hole_index, result.solution or ""
-        )
+            if not result.success:
+                failed.append(result)
+                continue
+
+            working_source = replace_hole(
+                working_source, gap.hole_index, result.solution or ""
+            )
+
+            if result.method.startswith("lemma:"):
+                # the new lemma's postulate belongs in the text from now on
+                working_source = layout.render(working_source)
 
     if failed:
         restore_file(agda_file, original_source)
-        restore_file(helpers_file, original_helpers)
+        layout.restore(original_helpers)
 
         return fail(
             "gaps",
@@ -352,11 +394,11 @@ def _attempt_dsp(
             ),
         )
 
-    agda_file.write_text(working_source)
+    agda_file.write_text(layout.render(working_source))
 
     if count_holes(working_source) != 0:
         restore_file(agda_file, original_source)
-        restore_file(helpers_file, original_helpers)
+        layout.restore(original_helpers)
 
         return fail(
             "gaps",
@@ -366,83 +408,91 @@ def _attempt_dsp(
         )
 
     # ------------------------------------------------------ discharge lemmas
-    obligations = sketch.lemmas + promoted
+    # Only lemmas the proof uses are part of the decomposition: a model that
+    # names a lemma and then proves the theorem without it has not split the
+    # proof there, and an unused lemma must not sink a finished proof.
+    declared = sketch.lemmas + promoted
+    used_names = _names_in_declaration(working_source, target_name)
+    obligations = [o for o in declared if o.name in used_names]
+    unused = [o.name for o in declared if o.name not in used_names]
     lemma_results: list[DSPResult] = []
 
-    if obligations:
+    if unused:
+        log.event("lemma_unused", lemmas=unused)
+
+    if declared:
         # Drop this level's postulates; keep everything proved so far.
-        restore_file(helpers_file, original_helpers)
+        layout.restore(original_helpers)
 
-        for obligation in obligations:
-            if verbose:
-                print(f"{indent}  discharging lemma {obligation.name}")
+    for obligation in obligations:
+        if verbose:
+            print(f"{indent}  discharging lemma {obligation.name}")
 
-            log.event(
-                "lemma_start", lemma=obligation.name,
-                signature=obligation.signature, hint=obligation.informal_hint,
+        log.event(
+            "lemma_start", lemma=obligation.name,
+            signature=obligation.signature, hint=obligation.informal_hint,
+        )
+
+        goal_file = layout.lemma_goal(obligation, working_source)
+
+        lemma_result = prove_dsp(
+            agda_file=goal_file,
+            layout=layout,
+            informal_statement=obligation.informal_hint or None,
+            llm=llm,
+            model=model,
+            sketch_max_attempts=sketch_max_attempts,
+            hammer=hammer,
+            max_depth=max_depth,
+            depth=depth + 1,
+            history=history,
+            verbose=verbose,
+            place_holes=place_holes,
+            draft=draft,
+        )
+
+        lemma_results.append(lemma_result)
+
+        log.event(
+            "lemma_end", lemma=obligation.name,
+            success=lemma_result.success, output=lemma_result.output,
+        )
+
+        if not lemma_result.success:
+            restore_file(agda_file, original_source)
+            layout.restore(original_helpers)
+
+            return fail(
+                "lemma",
+                sketch=sketch,
+                gap_results=gap_results,
+                lemma_results=lemma_results,
+                output=(
+                    f"Lemma {obligation.name} could not be proved.\n"
+                    f"{lemma_result.output}"
+                ),
             )
 
-            write_helper_goal_file(
-                helper_goal_file=helper_goal_file,
-                obligation=obligation,
-            )
+        if lemma_result.final_source is None:
+            raise ValueError(f"Lemma {obligation.name} succeeded without a source.")
 
-            lemma_result = prove_dsp(
-                agda_file=helper_goal_file,
-                helpers_file=helpers_file,
-                helper_goal_file=helper_goal_file,
-                informal_statement=obligation.informal_hint or None,
-                llm=llm,
-                model=model,
-                sketch_max_attempts=sketch_max_attempts,
-                hammer=hammer,
-                max_depth=max_depth,
-                depth=depth + 1,
-                history=history,
-                verbose=verbose,
-            )
-
-            lemma_results.append(lemma_result)
-
-            log.event(
-                "lemma_end", lemma=obligation.name,
-                success=lemma_result.success, output=lemma_result.output,
-            )
-
-            if not lemma_result.success:
-                restore_file(agda_file, original_source)
-                restore_file(helpers_file, original_helpers)
-
-                return fail(
-                    "lemma",
-                    sketch=sketch,
-                    gap_results=gap_results,
-                    lemma_results=lemma_results,
-                    output=(
-                        f"Lemma {obligation.name} could not be proved.\n"
-                        f"{lemma_result.output}"
-                    ),
-                )
-
-            append_helper_declaration(
-                helpers_file=helpers_file,
-                declaration=_declaration_of(lemma_result, obligation),
-            )
+        layout.add_proved(layout.declaration_of(lemma_result.final_source, obligation.name))
 
     # ----------------------------------------------------------- final check
+    working_source = layout.render(working_source)
     agda_file.write_text(working_source)
-    final = run_plain_agda(agda_file, import_path=hammer.import_path)
+    final = run_plain_agda(agda_file, import_path=hammer.import_path, timeout=hammer.agda_timeout)
 
-    leftover_postulates = "postulate" in helpers_file.read_text()
+    leftover_postulates = layout.has_postulates()
 
     if not final.success or leftover_postulates:
         restore_file(agda_file, original_source)
-        restore_file(helpers_file, original_helpers)
+        layout.restore(original_helpers)
 
         message = final.output
 
         if leftover_postulates:
-            message += "\n\nHelpers file still contains postulates."
+            message += "\n\nSome lemmas are still postulated."
 
         return fail(
             "final_check",
@@ -461,12 +511,14 @@ def _attempt_dsp(
         lemma_results=lemma_results,
         final_source=working_source,
         output=final.output,
+        stage="done",
+        decomposition=log_decomposition(agda_file, target_name, hammer.import_path),
     )
 
     log.event(
         "dsp_result", success=True, stage="done",
         final_source=working_source,
-        helpers_source=helpers_file.read_text(),
+        helpers_source=layout.text(),
         gap_methods=[r.method for r in gap_results],
     )
 
@@ -477,9 +529,44 @@ def _attempt_dsp(
 # Stage helpers
 # ---------------------------------------------------------------------------
 
+def log_decomposition(
+    agda_file: Path,
+    target_name: str,
+    import_path: str,
+    role: str = "proof",
+    declared: list[str] | None = None,
+) -> Decomposition | None:
+    """
+    Take a proof apart into clauses, steps and lemmas (util.deproof) and log
+    it. `role` is "proof" (finished), "sketch" (holes still open; `declared`
+    are its lemma signatures) or "reference". This is analysis, so a failure
+    here is logged, never raised.
+    """
+
+    log = run_logger()
+
+    try:
+        decomposition = decompose(
+            agda_file, target_name, import_path=import_path, declared=declared or ()
+        )
+    except Exception as error:
+        log.event(
+            "decomposition", role=role, name=target_name, ok=False,
+            error=f"{type(error).__name__}: {error}",
+        )
+        return None
+
+    log.event(
+        "decomposition", role=role, name=target_name, ok=True,
+        decomposition=decomposition, text=decomposition.render(),
+    )
+
+    return decomposition
+
+
 def _build_sketch(
     agda_file: Path,
-    helpers_file: Path,
+    layout: Layout,
     original_source: str,
     target_name: str,
     signature_line: str,
@@ -487,24 +574,31 @@ def _build_sketch(
     llm: ProofLLM,
     max_attempts: int,
     history: ProofHistory,
-    import_path: str,
+    hammer: HammerConfig,
     verbose: bool,
     indent: str,
+    place_holes: bool = False,
 ) -> tuple[FormalSketch | None, list[str]]:
     """
     Ask for a skeleton until one typechecks with holes.
 
     The success condition here is *not* a complete proof: it is "Agda accepts
     the structure and reports N interaction points".
+
+    Two repairs before giving up on a sketch, each logged as `sketch_repair`:
+    a declared lemma whose statement does not check is dropped; and, with
+    `place_holes`, holes go where the sketch's proof fails (proof/holes.py),
+    for a model that writes whole proofs rather than skeletons.
     """
 
     log = run_logger()
     errors: list[str] = []
     previous_errors = history.messages_for_target(target_name)
-    helpers_snapshot = save_file(helpers_file)
+    helpers_snapshot = layout.snapshot()
+    import_path = hammer.import_path
 
     context_sigs = context_signatures(Path(import_path), exclude=NON_CONTEXT_FILES)
-    proved_helpers = available_signatures(helpers_snapshot or "")
+    proved_helpers = available_signatures(layout.text())
     names = "\n".join(part for part in (context_sigs, proved_helpers) if part)
 
     for attempt in range(1, max_attempts + 1):
@@ -535,7 +629,7 @@ def _build_sketch(
             previous_errors = previous_errors + [f"Parse failure: {error}"]
             continue
 
-        first_line = _first_code_line(sketch_text)
+        first_line = _sketch_signature(sketch_text, target_name)
 
         if _normalise(first_line) != _normalise(signature_line):
             message = (
@@ -559,7 +653,9 @@ def _build_sketch(
                 dropped_lemmas=dropped_lemmas, dropped_clauses=dropped_clauses,
             )
 
-        syntax_problem = _obvious_syntax_problem(sketch_text)
+        # The sketch prompt's rules; a formalizer writing real proofs is not
+        # bound by them (`with`, `rewrite` are fine there).
+        syntax_problem = _obvious_syntax_problem(sketch_text) if getattr(llm, "sketch_rules", True) else ""
 
         if syntax_problem:
             reject("syntax", syntax_problem, sketch=sketch_text, lemmas=lemmas, raw=raw)
@@ -574,17 +670,49 @@ def _build_sketch(
                 print(f"{indent}  (sketch has no holes; treating as a direct proof)")
 
         # Postulate this sketch's lemmas on top of whatever is already proved.
-        restore_file(helpers_file, helpers_snapshot)
-        append_postulates(helpers_file, lemmas)
+        def install(lemmas: list[ProofObligation], text: str):
+            layout.restore(helpers_snapshot)
+            layout.postulate(lemmas, before=target_name)
+            trial = layout.install(original_source, target_name, text)
+            agda_file.write_text(trial)
+            return trial, check_sketch(
+                agda_file, import_path=import_path, with_context=True, timeout=hammer.agda_timeout,
+            )
 
-        trial = replace_top_level_decl(
-            source=ensure_import(original_source, HELPERS_IMPORT),
-            name=target_name,
-            replacement=sketch_text,
-        )
+        trial, check = install(lemmas, sketch_text)
+        repairs: list[str] = []
 
-        agda_file.write_text(trial)
-        check = check_sketch(agda_file, import_path=import_path, with_context=True)
+        # Two repairs, in turn until neither helps (one error can hide the
+        # other: Agda stops at a clause's parse error before a lemma's):
+        # a lemma whose statement does not check sinks the whole sketch, so
+        # drop it and see whether the rest stands; and a sketch that is really
+        # a whole proof attempt keeps what checks, with holes where it fails.
+        for _round in range(len(lemmas) + 2):
+            if check.kind != "error":
+                break
+
+            bad = layout.lemma_at_error(check.message, lemmas) if lemmas else None
+
+            if bad is not None:
+                lemmas = [lemma for lemma in lemmas if lemma.name != bad]
+                repairs.append(f"dropped lemma {bad}, whose statement did not check")
+                trial, check = install(lemmas, sketch_text)
+                continue
+
+            if not place_holes:
+                break
+
+            before = len(repairs)
+            trial, check = place_holes_in(
+                agda_file, trial, check, target_name, None, hammer, repairs,
+            )
+
+            if len(repairs) == before or not lemmas:
+                break
+
+        if repairs:
+            log.event("sketch_repair", attempt=attempt, repairs=repairs,
+                      accepted=check.kind != "error")
 
         if check.kind == "error":
             history.add(
@@ -597,10 +725,16 @@ def _build_sketch(
             previous_errors = history.messages_for_target(target_name)
             continue
 
-        # A hole of function type means a clause left an argument unbound
-        # (`f (suc m) = {!!}` for a two-argument f). Mimer is poor at
-        # introducing binders, and the paper's sketches only leave
-        # propositions open, so ask for the arguments to be matched instead.
+        # A hole of function type means a clause left arguments unbound
+        # (`f (suc m) = {!!}` for a two-argument f, or a point-free clause).
+        # Mimer is poor at introducing binders, so let Agda introduce them
+        # (refine/intro: `λ { x → {!!} }`) until the holes are propositions.
+        if any(_is_function_type(g.type) for g in check.goals):
+            trial, check, introduced = _introduce_binders(agda_file, trial, check, hammer)
+            if introduced:
+                log.event("sketch_repair", attempt=attempt, accepted=check.kind != "error",
+                          repairs=[f"introduced binders in {introduced} function-typed hole(s)"])
+
         unbound = [g.type for g in check.goals if _is_function_type(g.type)]
 
         if unbound:
@@ -620,6 +754,10 @@ def _build_sketch(
             continue
 
         gaps = build_gaps(trial, check.goals)
+        decomposition = log_decomposition(
+            agda_file, target_name, import_path, role="sketch",
+            declared=[lemma.name for lemma in lemmas],
+        )
 
         log.event(
             "sketch_attempt", attempt=attempt, accepted=True,
@@ -642,12 +780,59 @@ def _build_sketch(
                 lemmas=lemmas,
                 gaps=gaps,
                 raw_response=raw,
+                decomposition=decomposition,
             ),
             errors,
         )
 
-    restore_file(helpers_file, helpers_snapshot)
+    layout.restore(helpers_snapshot)
     return None, errors
+
+
+def _introduce_binders(agda_file: Path, trial: str, check, hammer: HammerConfig, limit: int = 8):
+    """
+    Agda's refine/intro on each function-typed hole, one at a time from the
+    last, until none is left (or intro fails). Returns the new text, its
+    check, and how many binders were introduced.
+    """
+
+    introduced = 0
+
+    for _ in range(limit):
+        if check.kind == "error":
+            break
+
+        holes = [g for g in check.goals if _is_function_type(g.type) and g.id is not None]
+
+        if not holes:
+            break
+
+        goal = max(holes, key=lambda g: g.id)
+        index = sorted(g.id for g in check.goals if g.id is not None).index(goal.id)
+
+        with AgdaSession(agda_file, import_path=hammer.import_path, timeout=hammer.agda_timeout) as session:
+            if session.load().kind != "goal":
+                break
+            text = session.intro(goal.id)
+
+        if not text:
+            break
+
+        # Agda writes the new holes as `?`
+        text = HOLE_RE.sub("{!!}", text)
+        candidate = replace_hole(trial, index, text if text.startswith("(") else f"({text})")
+        agda_file.write_text(candidate)
+        result = check_sketch(agda_file, import_path=hammer.import_path, with_context=True,
+                              timeout=hammer.agda_timeout)
+
+        if result.kind == "error":
+            agda_file.write_text(trial)
+            break
+
+        trial, check = candidate, result
+        introduced += 1
+
+    return trial, check, introduced
 
 
 def _filter_lemmas(
@@ -760,14 +945,26 @@ def _strip_brackets(text: str) -> str:
     return "".join(out)
 
 
-def _first_code_line(text: str) -> str:
-    for line in text.splitlines():
-        stripped = line.strip()
+def _sketch_signature(text: str, name: str) -> str:
+    """
+    The sketch's signature for `name`, its continuation lines joined: the
+    first code line and the indented lines after it.
+    """
 
-        if stripped and not stripped.startswith("--"):
-            return stripped
+    lines = [line for line in text.splitlines() if line.strip() and not line.strip().startswith("--")]
 
-    return ""
+    if not lines:
+        return ""
+
+    parts = [lines[0].strip()]
+    column = len(lines[0]) - len(lines[0].lstrip())
+
+    for line in lines[1:]:
+        if len(line) - len(line.lstrip()) <= column:
+            break
+        parts.append(line.strip())
+
+    return " ".join(parts)
 
 
 def _normalise(line: str) -> str:
@@ -777,7 +974,7 @@ def _normalise(line: str) -> str:
 def _plausible_signature(signature: str) -> bool:
     """Cheap filter for prompt echoes and prose before Agda sees the text."""
 
-    if not signature or "\n" in signature or len(signature) > 400:
+    if not signature or "\n" in signature or len(signature) > 1500:
         return False
 
     if re.search(r"</?[A-Z_]+>|```", signature):
@@ -790,14 +987,66 @@ def _is_degenerate(signature: str, goal_type: str) -> bool:
     """A lemma that just restates the goal buys nothing and recurses forever."""
     def norm(s: str) -> str:
         s = re.sub(r"∀\s*[^→]*→", "", s)
-        s = re.sub(r"\([^:]+:[^)]+\)\s*→", "", s)
+        s = re.sub(r"\([^:()]+:[^()]+\)\s*→", "", s)       # (x : A) →
+        s = re.sub(r"\{[^:{}]+:[^{}]+\}\s*→", "", s)       # {x : A} →, implicit binders too
         return " ".join(s.split())
     return norm(signature) == norm(goal_type)
 
 
+def _names_in_declaration(source: str, name: str) -> set[str]:
+    """Every word in `name`'s declaration (signature and clauses)."""
+
+    try:
+        start, _, end, _ = declaration_span(source, name)
+    except ValueError:
+        return set(NAME_RE.findall(source))
+
+    return set(NAME_RE.findall(source[start:end]))
+
+
+def _clause_variables(source: str, hole_index: int, target_name: str) -> set[str] | None:
+    """The names the clause holding hole `hole_index` binds on its left-hand side."""
+
+    try:
+        _, clauses = parse_clauses(source, target_name)
+    except ValueError:
+        return None
+
+    spans = find_holes(source)
+
+    if not 0 <= hole_index < len(spans):
+        return None
+
+    offset = spans[hole_index][0]
+
+    for clause in clauses:
+        if clause.rhs_span and clause.rhs_span[0] <= offset < clause.rhs_span[1]:
+            return set(re.findall(r"[^\s(){};.@=|]+", clause.lhs)) - {target_name}
+
+    return None
+
+
+def _hole_is_whole_declaration(source: str, hole_index: int, target_name: str) -> bool:
+    """Whether the hole is the entire right-hand side of a one-clause declaration."""
+
+    try:
+        _, clauses = parse_clauses(source, target_name)
+    except ValueError:
+        return False
+
+    bodies = [c for c in clauses if c.rhs_span is not None]
+
+    if len(bodies) != 1 or bodies[0].rhs.strip() not in ("{!!}", "?"):
+        return False
+
+    spans = find_holes(source)
+
+    return 0 <= hole_index < len(spans) and spans[hole_index][0] == bodies[0].rhs_span[0]
+
+
 def _promote_gap_to_lemma(
     agda_file: Path,
-    helpers_file: Path,
+    layout: Layout,
     source: str,
     gap: SketchGap,
     llm: ProofLLM,
@@ -808,6 +1057,7 @@ def _promote_gap_to_lemma(
     mimer_hints: list[str],
     verbose: bool,
     indent: str,
+    session=None,
 ) -> GapResult:
     """
     Last resort for a stuck hole: abstract it into a top-level lemma, postulate
@@ -817,20 +1067,31 @@ def _promote_gap_to_lemma(
     """
 
     log = run_logger()
-    lemma_name = _fresh_lemma_name(target_name, gap.hole_index, existing_lemmas)
+    lemma_name = _fresh_lemma_name(target_name, gap.hole_index, existing_lemmas, source)
 
     if verbose:
         print(f"{indent}  promoting gap {gap.hole_index} to lemma {lemma_name}")
 
+    # The goal and context as written (not normalised, which unfolds into
+    # names the file never imported), from the open session when there is one.
+    goal_type, context = gap.goal_type, gap.context
+    if session is not None and session.alive and gap.goal_id is not None:
+        try:
+            goal_type, context = session.goal_type_and_context(gap.goal_id, "AsIs")
+            goal_type = goal_type or gap.goal_type
+        except Exception:
+            goal_type, context = gap.goal_type, gap.context
+
     try:
         signature = llm.lemma_signature_for_gap(
             lemma_name=lemma_name,
-            goal_type=gap.goal_type,
-            context=gap.context,
+            goal_type=goal_type,
+            context=context,
             context_module=CONTEXT_MODULE,
             informal_hint=gap.informal_hint,
             available_names=available_names,
             target_name=target_name,
+            bound=_clause_variables(source, gap.hole_index, target_name),
         )
     except (ValueError, RuntimeError) as error:
         log.event("promote", hole_index=gap.hole_index, lemma=lemma_name, ok=False, error=str(error))
@@ -846,7 +1107,12 @@ def _promote_gap_to_lemma(
             output=f"Model returned an implausible lemma signature: {signature!r}",
         )
 
-    if _is_degenerate(signature, gap.goal_type):
+    # A lemma restating the hole's goal is the point when the formalizer
+    # states it: the goal is then proved on its own, one level down. Not
+    # when the hole is the whole theorem, though: that lemma is the theorem.
+    whole = _hole_is_whole_declaration(source, gap.hole_index, target_name)
+
+    if _is_degenerate(signature, goal_type) and (whole or not getattr(llm, "states_gap_goals", False)):
         log.event(
             "promote", hole_index=gap.hole_index, lemma=lemma_name,
             signature=signature, ok=False, error="degenerate",
@@ -867,14 +1133,28 @@ def _promote_gap_to_lemma(
 
     # Append rather than rewrite: the parent may already have proved and
     # appended sibling lemmas that its final check depends on.
-    saved_helpers = helpers_file.read_text()
-    append_postulates(helpers_file, [obligation])
+    saved_helpers = layout.snapshot()
+    layout.postulate([obligation], before=target_name)
+    rendered = layout.render(source)
 
-    variables = [entry.name for entry in gap.context if entry.in_scope]
-    candidates = [lemma_name] + [
-        f"{lemma_name} {' '.join(variables[:k])}"
-        for k in range(len(variables), 0, -1)
+    if rendered != source:          # the lemma lives in this file: Mimer must see it
+        agda_file.write_text(rendered)
+
+    # The file (or the helpers it imports) changed: the session reloads it.
+    _reload(session)
+
+    variables = [entry.name for entry in context if entry.in_scope]
+    # The lemma applied to its own explicit binders first, then to prefixes
+    # of the in-scope variables.
+    binders = [
+        name for group in re.findall(r"\(([^():]+?)\s*:", signature) for name in group.split()
     ]
+    exact = [name for name in binders if name in variables]
+    candidates = list(dict.fromkeys(
+        ([f"{lemma_name} {' '.join(exact)}"] if exact else [])
+        + [lemma_name]
+        + [f"{lemma_name} {' '.join(variables[:k])}" for k in range(len(variables), 0, -1)]
+    ))
 
     config = HammerConfig(
         tactics=tuple(candidates),
@@ -882,17 +1162,19 @@ def _promote_gap_to_lemma(
         llm_attempts=0,
         import_path=hammer.import_path,
         mimer_timeout=hammer.mimer_timeout,
+        agda_timeout=hammer.agda_timeout,
     )
 
     result = close_gap(
         agda_file=agda_file,
-        source=source,
+        source=rendered,
         gap=gap,
         llm=None,
         config=config,
         mimer_hints=list(mimer_hints) + [lemma_name],
         target_name=target_name,
         verbose=verbose,
+        session=session,
     )
 
     log.event(
@@ -903,9 +1185,41 @@ def _promote_gap_to_lemma(
     if result.success:
         result.method = f"lemma:{lemma_name} :: {signature}"
     else:
-        restore_file(helpers_file, saved_helpers)
+        layout.restore(saved_helpers)
+        if rendered != source:
+            agda_file.write_text(layout.render(source))
+        _reload(session)
 
     return result
+
+
+@contextmanager
+def _sketch_session(agda_file: Path, hammer: HammerConfig):
+    """An Agda session with the sketch loaded, or None if it will not load."""
+
+    session = AgdaSession(agda_file, import_path=hammer.import_path, timeout=hammer.agda_timeout)
+
+    try:
+        session.__enter__()
+        loaded = session.load().kind == "goal"
+    except Exception:
+        loaded = False
+
+    try:
+        yield session if loaded else None
+    finally:
+        session.stop()
+
+
+def _reload(session) -> None:
+    """Reload a session after its file changed; a failed reload just ends it."""
+
+    if session is None:
+        return
+    try:
+        session.load()
+    except Exception:
+        session.stop()
 
 
 def _lemma_from_method(result: GapResult) -> ProofObligation:
@@ -923,9 +1237,12 @@ def _fresh_lemma_name(
     target_name: str,
     hole_index: int,
     existing: list[ProofObligation],
+    source: str = "",
 ) -> str:
+    """`<target>-gap<i>`, avoiding other lemmas and every name in the file."""
+
     base = "".join(char for char in target_name if char.isalnum()) or "lemma"
-    taken = {lemma.name for lemma in existing}
+    taken = {lemma.name for lemma in existing} | set(NAME_RE.findall(source))
 
     candidate = f"{base}-gap{hole_index}"
     suffix = 0
@@ -935,37 +1252,3 @@ def _fresh_lemma_name(
         candidate = f"{base}-gap{hole_index}-{suffix}"
 
     return candidate
-
-
-def _declaration_of(result: DSPResult, obligation: ProofObligation) -> str:
-    """
-    Pull the proved lemma's declaration out of the temporary helper-goal file
-    contents that the recursive call returned.
-    """
-
-    if result.final_source is None:
-        raise ValueError(f"Lemma {obligation.name} succeeded without a source.")
-
-    lines = result.final_source.splitlines()
-    start = None
-
-    for index, line in enumerate(lines):
-        if line.startswith(f"{obligation.name} :"):
-            start = index
-            break
-
-    if start is None:
-        raise ValueError(
-            f"Could not find declaration of {obligation.name} in the proved file."
-        )
-
-    end = len(lines)
-
-    for index in range(start + 1, len(lines)):
-        line = lines[index]
-
-        if line and not line.startswith((" ", "\t", "--")) and " : " in line:
-            end = index
-            break
-
-    return "\n".join(lines[start:end]).strip()

@@ -76,6 +76,9 @@ class OllamaBackend:
     think: bool | None = config.OLLAMA_THINK
     num_ctx: int = config.OLLAMA_NUM_CTX
     num_predict: int | None = None
+    # Send the prompt as is, without the model's chat template: for models
+    # trained on raw prompt/completion pairs (the autoformalize fine-tune).
+    raw: bool = False
     name: str = "ollama"
 
     def generate(
@@ -119,8 +122,11 @@ class OllamaBackend:
             "options": options,
         }
 
-        if think is not None:
+        if think is not None and not self.raw:
             body["think"] = think
+
+        if self.raw:
+            body["raw"] = True
 
         started = time.monotonic()
         response = requests.post(
@@ -350,6 +356,11 @@ class ProofLLM:
 
         return response.text
 
+    def complete(self, stage: str, prompt: str, stop: list[str] | None = None, **tags: Any) -> str:
+        """A plain completion, logged like every other call."""
+
+        return self._generate(stage, prompt, stop=stop, **tags)
+
     # -- stage 1: draft ----------------------------------------------------
 
     def draft_informal_proof(
@@ -516,6 +527,7 @@ class ProofLLM:
         informal_hint: str = "",
         available_names: str = "",
         target_name: str = "",
+        bound: set[str] | None = None,
     ) -> str:
         prompt = prompts.LEMMA_FROM_GAP_TEMPLATE.format(
             lemma_name=lemma_name,

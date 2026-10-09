@@ -16,7 +16,9 @@ import re
 from core.proof_state import SketchGap
 
 
-HOLE_RE = re.compile(r"\{!.*?!\}|(?<![\w?])\?(?![\w?])", re.DOTALL)
+# `?` is a hole only as a token of its own: Agda names are delimited by
+# whitespace and brackets, so `m ≤? n` and `_≟_` contain no hole.
+HOLE_RE = re.compile(r"\{!.*?!\}|(?<![^\s(){};])\?(?![^\s(){};])", re.DOTALL)
 LINE_COMMENT_RE = re.compile(r"--[^\n]*")
 
 
@@ -30,7 +32,32 @@ def mask_comments(source: str) -> str:
     otherwise count as a hole and misalign holes with Agda's goals.
     """
 
-    return LINE_COMMENT_RE.sub(lambda m: " " * len(m.group(0)), source)
+    return LINE_COMMENT_RE.sub(lambda m: " " * len(m.group(0)), _mask_prose(source))
+
+
+def _mask_prose(source: str) -> str:
+    """
+    In literate Agda Markdown (`.lagda.md`) only ```agda blocks are code;
+    blank out the prose around them, which may well contain a `?`.
+    """
+
+    if "```agda" not in source:
+        return source
+
+    out: list[str] = []
+    in_code = False
+
+    for line in source.splitlines(keepends=True):
+        fence = line.strip().startswith("```")
+        keep = in_code and not fence
+
+        if fence:
+            in_code = line.strip() == "```agda" if not in_code else False
+
+        body = line.rstrip("\n")
+        out.append((body if keep else " " * len(body)) + line[len(body):])
+
+    return "".join(out)
 
 
 def find_holes(source: str) -> list[tuple[int, int]]:

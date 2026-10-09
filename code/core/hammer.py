@@ -25,11 +25,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.config import AGDA_IMPORT_PATH, MIMER_TIMEOUT_SECONDS
+from core.config import AGDA_IMPORT_PATH, AGDA_TIMEOUT_SECONDS, MIMER_TIMEOUT_SECONDS
 from core.agda_client import AgdaSession, AutoError, check_sketch
 from core.llm_client import ProofLLM
 from core.proof_state import GapResult, SketchGap
 from core.run_log import run_logger
+from util.agda_source import WORD_RE
 from util.sketch_ops import count_holes, excerpt_around_hole, replace_hole
 
 
@@ -49,6 +50,9 @@ class HammerConfig:
     mimer_candidates: int = 10   # how many of Mimer's listed solutions to typecheck
     llm_attempts: int = 2
     import_path: str = AGDA_IMPORT_PATH
+    # Per Agda load. The test files load in a second; a library module with
+    # its imports can take minutes cold.
+    agda_timeout: int = AGDA_TIMEOUT_SECONDS
     extra_tactics: list[str] = field(default_factory=list)
 
     def all_tactics(self) -> list[str]:
@@ -65,6 +69,7 @@ def close_gap(
     mimer_hints: list[str] | None = None,
     target_name: str = "",
     verbose: bool = True,
+    session: AgdaSession | None = None,
 ) -> GapResult:
     """
     Try to close one hole in `source`. Does not mutate `agda_file` on failure:
@@ -72,11 +77,21 @@ def close_gap(
 
     `mimer_hints` are names Mimer may apply (lemmas, `sym`, `trans`, ...). They
     must all be in scope in `agda_file` or Agda rejects the whole command.
+
+    With `session` (an Agda session that has the file with this hole loaded),
+    candidates are checked by giving them to the hole instead of reloading
+    the file, and Mimer runs in the same session: much faster on a library
+    file. A candidate that calls `target_name` is still checked by a reload,
+    because a give skips the termination checker. A winning term is left
+    filled in the session, which then matches `source` with it in place.
     """
 
     config = config or HammerConfig()
     baseline_holes = count_holes(source)
     log = run_logger()
+
+    if session is not None and not session.alive:
+        session = None   # fall back to reloading
 
     log.event(
         "gap_start",
@@ -98,14 +113,22 @@ def close_gap(
                 success=False, gap=gap, method=method,
                 output=f"Inadmissible term: {term!r}",
             )
-        ok, output = _candidate_typechecks(
-            agda_file=agda_file,
-            source=source,
-            gap=gap,
-            term=term,
-            baseline_holes=baseline_holes,
-            import_path=config.import_path,
-        )
+        recursive = bool(target_name) and target_name in WORD_RE.findall(term)
+
+        if session is not None and gap.goal_id is not None and not recursive:
+            ok, output = _give_candidate(session, source, gap, term, baseline_holes)
+        else:
+            ok, output = _candidate_typechecks(
+                agda_file=agda_file,
+                source=source,
+                gap=gap,
+                term=term,
+                baseline_holes=baseline_holes,
+                import_path=config.import_path,
+                timeout=config.agda_timeout,
+            )
+            if ok and session is not None and gap.goal_id is not None:
+                session.give(gap.goal_id, term)   # keep the session in step
 
         log.event(
             "gap_candidate", hole_index=gap.hole_index, method=method,
@@ -147,10 +170,14 @@ def close_gap(
     #    not run the termination checker, so take its candidate list and keep
     #    going until one survives a real typecheck.
     if config.use_mimer and gap.goal_id is not None:
-        terms, note = _try_mimer(
-            agda_file, gap.goal_id, config.import_path,
-            hints=mimer_hints or [], timeout=config.mimer_timeout,
-        )
+        if session is not None:
+            terms, note = _mimer_list(session, gap.goal_id, mimer_hints or [], config.mimer_timeout)
+        else:
+            terms, note = _try_mimer(
+                agda_file, gap.goal_id, config.import_path,
+                hints=mimer_hints or [], timeout=config.mimer_timeout,
+                load_timeout=config.agda_timeout,
+            )
 
         log.event(
             "mimer", hole_index=gap.hole_index, goal_id=gap.goal_id,
@@ -216,6 +243,7 @@ def _candidate_typechecks(
     term: str,
     baseline_holes: int,
     import_path: str,
+    timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> tuple[bool, str]:
     """
     Splice `term` into the hole, typecheck, and restore the file.
@@ -242,7 +270,9 @@ def _candidate_typechecks(
     agda_file.write_text(candidate_source)
 
     try:
-        result = check_sketch(agda_file, import_path=import_path, with_context=False)
+        result = check_sketch(
+            agda_file, import_path=import_path, with_context=False, timeout=timeout
+        )
     finally:
         if original is not None:
             agda_file.write_text(original)
@@ -253,38 +283,78 @@ def _candidate_typechecks(
     return True, ""
 
 
+def _give_candidate(
+    session: AgdaSession, source: str, gap: SketchGap, term: str, baseline_holes: int,
+) -> tuple[bool, str]:
+    """`_candidate_typechecks` by a give into the loaded session."""
+
+    try:
+        candidate_source = replace_hole(source, gap.hole_index, term)
+    except IndexError as error:
+        return False, str(error)
+
+    remaining = count_holes(candidate_source)
+
+    if remaining != baseline_holes - 1:
+        return False, f"Term did not close exactly one hole ({baseline_holes} -> {remaining})."
+
+    try:
+        return session.give(gap.goal_id, term)
+    except Exception as error:   # a dead session must not end the run
+        return False, f"{type(error).__name__}: {error}"
+
+
 def _try_mimer(
     agda_file: Path,
     goal_id: int,
     import_path: str,
     hints: list[str],
     timeout: int,
+    load_timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> tuple[list[str], str]:
     """Returns (candidate terms best-first, note explaining an empty list)."""
 
     try:
-        with AgdaSession(agda_file, import_path=import_path) as session:
+        with AgdaSession(agda_file, import_path=import_path, timeout=load_timeout) as session:
             load = session.load()
 
             if load.kind != "goal":
                 return [], f"file did not load with goals ({load.kind})"
 
-            try:
-                terms = session.auto_list(goal_id, hints=hints, timeout=timeout)
-            except AutoError as error:
-                # Usually an out-of-scope hint. Retry with no hints so a bad
-                # name never costs us the whole hammer step.
-                if not hints:
-                    return [], f"auto error: {error}"
-
-                terms = session.auto_list(goal_id, hints=[], timeout=timeout)
-                return terms, f"hints rejected ({_first_lines(str(error), 2)}); retried bare"
-
-            return terms, "ok" if terms else "no solution"
+            return _mimer_list(session, goal_id, hints, timeout)
     except Exception as error:
         # Mimer/Agsy availability and the exact JSON shape vary by Agda
         # version; never let that take down the pipeline.
         return [], f"{type(error).__name__}: {error}"
+
+
+def _mimer_list(
+    session: AgdaSession, goal_id: int, hints: list[str], timeout: int,
+) -> tuple[list[str], str]:
+    """Mimer's solutions in a loaded session, dropping hints Agda rejects."""
+
+    dropped: list[str] = []
+
+    try:
+        for _ in range(6):
+            try:
+                terms = session.auto_list(goal_id, hints=hints, timeout=timeout)
+            except AutoError as error:
+                # Usually an out-of-scope hint: drop the names Agda names
+                # and keep the rest; with nothing to drop, go bare.
+                if not hints:
+                    return [], f"auto error: {error}"
+                bad = [h for h in hints if re.search(rf"Not in scope:\s+{re.escape(h)}\b", str(error))]
+                hints = [h for h in hints if h not in bad] if bad else []
+                dropped += bad or ["(all)"]
+                continue
+
+            note = "ok" if terms else "no solution"
+            return terms, note + (f"; dropped hints {', '.join(dropped)}" if dropped else "")
+    except Exception as error:   # version differences in the auto protocol
+        return [], f"{type(error).__name__}: {error}"
+
+    return [], f"hints kept failing; dropped {', '.join(dropped)}"
 
 
 def _first_lines(text: str, n: int = 6) -> str:

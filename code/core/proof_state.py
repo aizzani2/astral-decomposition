@@ -176,6 +176,9 @@ class FormalSketch:
     lemmas: list[ProofObligation] = field(default_factory=list)
     gaps: list[SketchGap] = field(default_factory=list)
     raw_response: str = ""
+    # util.deproof.Decomposition of the skeleton: case split, open steps,
+    # and the declared lemma statements.
+    decomposition: Any = None
 
 
 @dataclass
@@ -252,6 +255,12 @@ class DSPResult:
     lemma_results: list[DSPResult] = field(default_factory=list)
     final_source: str | None = None
     output: str = ""
+    # Where it ended: "done", or the stage that failed (draft, sketch, gaps,
+    # lemma, final_check, depth, io).
+    stage: str = ""
+    # util.deproof.Decomposition of the finished proof: its clauses, steps
+    # and the lemmas each step uses. Only set on success.
+    decomposition: Any = None
 
     def gaps_closed(self) -> tuple[int, int]:
         closed = sum(1 for r in self.gap_results if r.success)

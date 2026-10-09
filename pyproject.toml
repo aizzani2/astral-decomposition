@@ -6,6 +6,12 @@ dependencies = ["requests"]
 
 [project.optional-dependencies]
 claude = ["anthropic"]
+data = ["pyarrow"]   # reading the astral-expmath datasets (util/agda_data.py)
+dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["code"]
+
+[tool.pytest.ini_options]
+testpaths = ["code/tests"]
+pythonpath = ["code"]

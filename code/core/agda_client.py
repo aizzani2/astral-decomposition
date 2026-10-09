@@ -16,6 +16,7 @@ Two things this adds over the previous single-shot version:
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import subprocess
@@ -25,6 +26,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from core import config
 from core.config import (
     AGDA_IMPORT_PATH,
     AGDA_TIMEOUT_SECONDS,
@@ -83,11 +85,14 @@ class AgdaSession:
 
     def __enter__(self) -> "AgdaSession":
         self.proc = subprocess.Popen(
-            ["agda", "-i", self.import_path, "--interaction-json"],
+            [config.AGDA_BIN, *config.AGDA_FLAGS, "-i", self.import_path, "--interaction-json"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            # Stopping Agda mid-write can leave half a UTF-8 sequence behind.
+            errors="replace",
             bufsize=1,
         )
         self._lines: queue.Queue[str | None] = queue.Queue()
@@ -109,6 +114,10 @@ class AgdaSession:
 
     def __exit__(self, *exc: object) -> None:
         self.stop()
+
+    @property
+    def alive(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
 
     def stop(self) -> None:
         if self.proc is None:
@@ -133,17 +142,18 @@ class AgdaSession:
         self.proc.stdin.write(payload)
         self.proc.stdin.flush()
 
-    def _read_objects(self, stop_when: Any) -> list[dict[str, Any]]:
+    def _read_objects(self, stop_when: Any, timeout: float | None = None) -> list[dict[str, Any]]:
         """Read JSON objects until stop_when(objects) is true or we run dry."""
         objects: list[dict[str, Any]] = []
-        deadline = time.monotonic() + self.timeout
+        timeout = self.timeout if timeout is None else timeout
+        deadline = time.monotonic() + timeout
 
         while len(objects) < MAX_JSON_LINES:
             remaining = deadline - time.monotonic()
 
             if remaining <= 0:
                 raise TimeoutError(
-                    f"Agda produced no usable response within {self.timeout}s "
+                    f"Agda produced no usable response within {timeout}s "
                     f"for {self.filename}.\n"
                     f"stderr:\n{''.join(self._stderr[-40:])}"
                 )
@@ -183,16 +193,131 @@ class AgdaSession:
         objects = self._read_objects(done)
         return _interpret_load(objects)
 
-    def goal_context(self, goal_id: int) -> list[ContextEntry]:
+    def give(self, goal_id: int, term: str, timeout: float | None = None) -> tuple[bool, str]:
+        """
+        Typecheck `term` in hole `goal_id` without reloading the file. On
+        success the hole is filled in the session (the other holes keep
+        their ids); on failure nothing changes.
+
+        Agda does not run the termination checker on a give, so a term that
+        calls the function being defined must still be checked by a reload.
+        """
+
+        self._drain()
+        escaped = term.replace("\\", "\\\\").replace('"', '\\"')
+        self._send(f'Cmd_give WithoutForce {goal_id} noRange "{escaped}"')
+
+        def done(objects: list[dict[str, Any]]) -> bool:
+            kinds = [
+                o.get("info", {}).get("kind") if o.get("kind") == "DisplayInfo" else o.get("kind")
+                for o in objects
+            ]
+            return "Error" in kinds or ("GiveAction" in kinds and "AllGoalsWarnings" in kinds)
+
+        objects = self._read_objects(done, timeout=timeout)
+        error = _auto_error(objects)
+
+        if error is not None:
+            return False, error
+
+        if any(o.get("kind") == "GiveAction" for o in objects):
+            return True, ""
+
+        return False, "Agda gave no answer to the give."
+
+    def intro(self, goal_id: int, timeout: float | None = None) -> str | None:
+        """
+        Agda's refine-or-intro on an empty hole: for a function type it
+        introduces a binder, `λ { x → ? }`. Returns the text Agda puts in
+        place of the hole, or None if it could not.
+        """
+
+        self._drain()
+        self._send(f'Cmd_refine_or_intro True {goal_id} noRange ""')
+
+        objects = self._read_objects(
+            lambda objs: any(
+                o.get("kind") == "GiveAction"
+                or (o.get("kind") == "DisplayInfo" and o.get("info", {}).get("kind") == "Error")
+                for o in objs
+            ),
+            timeout=timeout,
+        )
+
+        for obj in objects:
+            if obj.get("kind") == "GiveAction":
+                result = obj.get("giveResult", {})
+                text = result.get("str") if isinstance(result, dict) else result
+                return text if isinstance(text, str) and text.strip() else None
+
+        return None
+
+    def _drain(self) -> None:
+        """Drop whatever earlier commands left unread, so replies line up."""
+
+        while True:
+            try:
+                if self._lines.get_nowait() is None:
+                    break
+            except queue.Empty:
+                return
+
+    def goal_context(self, goal_id: int, rewrite: str = "Normalised") -> list[ContextEntry]:
         """Ask Agda for the variables in scope at one hole."""
 
-        self._send(f'Cmd_goal_type_context Normalised {goal_id} noRange ""')
+        return self.goal_type_and_context(goal_id, rewrite)[1]
+
+    def goal_type_and_context(
+        self, goal_id: int, rewrite: str = "Normalised"
+    ) -> tuple[str, list[ContextEntry]]:
+        """
+        One hole's goal and context, printed with `rewrite`. `AsIs` keeps
+        types as written: fully normalised types unfold definitions into
+        names the file never imported, which then print qualified and
+        cannot be written back into the file.
+        """
+
+        self._drain()
+        self._send(f'Cmd_goal_type_context {rewrite} {goal_id} noRange ""')
+
+        objects = self._read_objects(
+            lambda objs: any(o.get("kind") == "DisplayInfo" for o in objs)
+        )
+        goal = ""
+
+        for obj in objects:
+            if obj.get("kind") == "DisplayInfo":
+                info = obj.get("info", {})
+                goal = str(info.get("goalInfo", info).get("type") or "")
+
+        return goal, _interpret_context(objects)
+
+    def infer(self, goal_id: int, expression: str, rewrite: str = "Simplified") -> str:
+        """Type of `expression` in the context of one hole, as Agda prints it."""
+
+        escaped = expression.replace("\\", "\\\\").replace('"', '\\"')
+        self._send(f'Cmd_infer {rewrite} {goal_id} noRange "{escaped}"')
 
         objects = self._read_objects(
             lambda objs: any(o.get("kind") == "DisplayInfo" for o in objs)
         )
 
-        return _interpret_context(objects)
+        error = _auto_error(objects)
+
+        if error is not None:
+            raise ValueError(error)
+
+        for obj in objects:
+            if obj.get("kind") != "DisplayInfo":
+                continue
+
+            info = obj.get("info", {})
+            goal_info = info.get("goalInfo", info)
+
+            if goal_info.get("kind") == "InferredType":
+                return str(goal_info.get("expr", "")).strip()
+
+        raise ValueError(f"Agda inferred no type for {expression!r}.")
 
     def auto(
         self,
@@ -213,7 +338,7 @@ class AgdaSession:
         args = [f"-t {int(timeout)}"] + [h for h in (hints or []) if h.strip()]
         argument = " ".join(args)
 
-        self._send(f'Cmd_autoOne {goal_id} noRange "{argument}"')
+        self._send(f'Cmd_autoOne {_auto_rewrite()}{goal_id} noRange "{argument}"')
 
         objects = self._read_objects(
             lambda objs: any(
@@ -223,7 +348,8 @@ class AgdaSession:
                     and o.get("info", {}).get("kind") in ("Auto", "Error")
                 )
                 for o in objs
-            )
+            ),
+            timeout=timeout + 60,
         )
 
         return _interpret_auto(objects)
@@ -251,7 +377,7 @@ class AgdaSession:
 
         args += [h for h in (hints or []) if h.strip()]
 
-        self._send(f'Cmd_autoOne {goal_id} noRange "{" ".join(args)}"')
+        self._send(f'Cmd_autoOne {_auto_rewrite()}{goal_id} noRange "{" ".join(args)}"')
 
         objects = self._read_objects(
             lambda objs: any(
@@ -261,7 +387,8 @@ class AgdaSession:
                     and o.get("info", {}).get("kind") in ("Auto", "Error")
                 )
                 for o in objs
-            )
+            ),
+            timeout=timeout + 60,
         )
 
         error = _auto_error(objects)
@@ -319,6 +446,7 @@ def _range_for_goal_id(
 
 def _interpret_load(objects: list[dict[str, Any]]) -> AgdaLoadResult:
     goals: list[dict[str, Any]] = []
+    invisible: list[dict[str, Any]] = []
     interaction_points: list[dict[str, Any]] = []
     errors: list[str] = []
     warnings: list[str] = []
@@ -336,6 +464,7 @@ def _interpret_load(objects: list[dict[str, Any]]) -> AgdaLoadResult:
 
             if info_kind == "AllGoalsWarnings":
                 goals = info.get("visibleGoals", [])
+                invisible = info.get("invisibleGoals", []) or []
                 errors = _messages(info.get("errors", []))
                 warnings = _messages(info.get("warnings", []))
 
@@ -347,6 +476,25 @@ def _interpret_load(objects: list[dict[str, Any]]) -> AgdaLoadResult:
 
     if errors:
         return AgdaLoadResult(kind="error", message="\n".join(errors), warnings=warnings)
+
+    # Unsolved metavariables (a `_` Agda could not fill) are not holes: batch
+    # Agda rejects the file, so a sketch relying on one is not a sketch.
+    if invisible:
+        def at(goal: dict[str, Any]) -> str:
+            ranges = goal.get("constraintObj", {}).get("range") or []
+            if not ranges:
+                return ""
+            start, end = ranges[0].get("start", {}), ranges[0].get("end", {})
+            # same shape as Agda's own positions, so callers can locate it
+            return f" at :{start.get('line')}.{start.get('col')}-{end.get('line')}.{end.get('col')}"
+
+        unsolved = "\n".join(
+            f"  {g.get('constraintObj', {}).get('name', '_')} : {g.get('type', '')}{at(g)}"
+            for g in invisible
+        )
+        return AgdaLoadResult(
+            kind="error", message=f"Unsolved metas:\n{unsolved}", warnings=warnings,
+        )
 
     parsed_goals: list[AgdaGoal] = []
 
@@ -428,18 +576,37 @@ def _interpret_context(objects: list[dict[str, Any]]) -> list[ContextEntry]:
     return entries
 
 
+@functools.lru_cache(maxsize=None)
+def _agda_version(binary: str) -> tuple[int, ...]:
+    try:
+        out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+
+    return tuple(int(x) for x in match.groups()) if match else ()
+
+
+def _auto_rewrite() -> str:
+    """Agda 2.7 added a rewrite mode to `Cmd_autoOne`; older versions reject it."""
+
+    return "AsIs " if _agda_version(config.AGDA_BIN) >= (2, 7) else ""
+
+
 def parse_auto_listing(text: str) -> list[str]:
     """
-    Parse `Listing solution(s) 0-9\n0  term\n(continued)\n1  term ...`.
+    Parse `Listing solution(s) 0-9\n0  term\n(continued)\n1  term ...`
+    (Agda 2.6) or `Solutions:\n  0. term\n  1. term` (Agda 2.8).
     Continuation lines of a multi-line term do not start with an index.
     """
 
     solutions: list[str] = []
     current: list[str] = []
-    index_line = re.compile(r"^(\d+)\s{2,}(.*)$")
+    index_line = re.compile(r"^\s*(\d+)(?:\.\s+|\s{2,})(.*)$")
 
     for line in text.splitlines():
-        if line.startswith("Listing ") or line.startswith("No solution"):
+        if line.startswith(("Listing ", "No solution", "Solutions:")):
             continue
 
         match = index_line.match(line)
@@ -523,8 +690,9 @@ def _interpret_auto(objects: list[dict[str, Any]]) -> str | None:
 def load_agda_and_get_first_goal(
     filename: Path,
     import_path: str = AGDA_IMPORT_PATH,
+    timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaLoadResult:
-    with AgdaSession(filename, import_path=import_path) as session:
+    with AgdaSession(filename, import_path=import_path, timeout=timeout) as session:
         return session.load()
 
 
@@ -532,8 +700,9 @@ def load_agda_and_get_all_goals(
     filename: Path,
     import_path: str = AGDA_IMPORT_PATH,
     with_context: bool = False,
+    timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaLoadResult:
-    with AgdaSession(filename, import_path=import_path) as session:
+    with AgdaSession(filename, import_path=import_path, timeout=timeout) as session:
         result = session.load()
 
         if with_context and result.kind == "goal":
@@ -552,6 +721,7 @@ def check_sketch(
     filename: Path,
     import_path: str = AGDA_IMPORT_PATH,
     with_context: bool = True,
+    timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> SketchCheckResult:
     """
     Typecheck a file that is allowed to contain holes.
@@ -567,6 +737,7 @@ def check_sketch(
         filename,
         import_path=import_path,
         with_context=with_context,
+        timeout=timeout,
     )
 
     if result.kind == "error":
@@ -592,6 +763,16 @@ def check_sketch(
     return out
 
 
+def _project_root(filename: Path) -> str | None:
+    """The nearest directory above `filename` holding an .agda-lib, if any."""
+
+    for directory in filename.resolve().parents:
+        if any(directory.glob("*.agda-lib")):
+            return str(directory)
+
+    return None
+
+
 def run_plain_agda(
     filename: Path,
     import_path: str = AGDA_IMPORT_PATH,
@@ -602,10 +783,13 @@ def run_plain_agda(
 
     try:
         result = subprocess.run(
-            ["agda", "-i", import_path, str(filename)],
+            [config.AGDA_BIN, *config.AGDA_FLAGS, "-i", import_path, str(filename)],
             capture_output=True,
             text=True,
             timeout=timeout,
+            # Batch Agda finds the project's .agda-lib (and so its library
+            # dependencies) from the working directory, not from the file.
+            cwd=_project_root(filename),
         )
     except subprocess.TimeoutExpired:
         out = AgdaCheckResult(

@@ -25,6 +25,9 @@ Event kinds emitted by the pipeline (see the callers for exact fields):
                                  one hole; every term tried against it; the outcome
     lemma_start / lemma_end      one lemma obligation discharged recursively
     dsp_result                   result of one (possibly nested) DSP attempt
+    decomposition                a finished proof (or --reference) taken apart
+                                 into clauses, steps and lemmas (util/deproof)
+    decomposition_compare        the run's proof lined up against --reference
 
 Access the active logger via `run_logger()`. When no run is active this returns a
 no-op logger so library code never has to check.
@@ -43,6 +46,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+from core.config import AGDA_BIN
 
 
 def _jsonable(value: Any) -> Any:
@@ -86,7 +91,7 @@ def _git_dirty(root: Path) -> bool | None:
 
 def _agda_version() -> str | None:
     try:
-        out = subprocess.run(["agda", "--version"], capture_output=True, text=True, timeout=5)
+        out = subprocess.run([AGDA_BIN, "--version"], capture_output=True, text=True, timeout=5)
         return out.stdout.strip() or None
     except Exception:
         return None
@@ -101,12 +106,14 @@ class RunLogger:
         tag: str = "",
         config: dict[str, Any] | None = None,
         project_root: Path | None = None,
+        run_id: str | None = None,
     ) -> None:
         started = datetime.now(timezone.utc)
-        run_id = f"{started:%Y%m%d-%H%M%S}_{_slug(model)}"
 
-        if tag:
-            run_id += f"_{_slug(tag)}"
+        if run_id is None:
+            run_id = f"{started:%Y%m%d-%H%M%S}_{_slug(model)}"
+            if tag:
+                run_id += f"_{_slug(tag)}"
 
         self.run_id = run_id
         self.dir = root / run_id

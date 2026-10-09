@@ -20,12 +20,14 @@ from core.config import (
     PROJECT_ROOT,
 )
 from core.hammer import HammerConfig
-from core.llm_client import ProofLLM, make_backend
+from core.llm_client import OllamaBackend, ProofLLM, make_backend
 from core.proof_files import reset_helpers_file
 from core.proof_history import ProofHistory
 from core.proof_state import DSPResult
-from core.run_log import RunLogger, set_run_logger
-from proof.proof_sketch import prove_dsp
+from core.run_log import RunLogger, run_logger, set_run_logger
+from proof.formalizer import FormalizerLLM
+from proof.proof_sketch import log_decomposition, prove_dsp
+from util.deproof import compare
 
 
 DEFAULT_AGDA_FILE = AGDA_ROOT / "Tests" / "Target.agda"
@@ -57,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
                        choices=["low", "medium", "high", "xhigh", "max"],
                        help="Anthropic: thinking effort.")
     model.add_argument("--llm-timeout", type=int, default=config.LLM_TIMEOUT_SECONDS)
+    model.add_argument("--formalizer", default=None,
+                       help="Ollama tag of the autoformalize fine-tune. With it, --model only "
+                            "drafts; the formalizer writes lemma statements and sketches "
+                            "(proof/formalizer.py). Implies --place-holes.")
+    model.add_argument("--formalizer-url", default=OLLAMA_BASE_URL)
 
     problem = parser.add_argument_group("problem")
     problem.add_argument(
@@ -69,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to a human-written informal proof, skipping the draft stage.",
     )
+    problem.add_argument(
+        "--reference",
+        default=None,
+        help="Agda file (under --import-path) with a finished proof of the same "
+             "declaration. Its decomposition is logged and compared with the run's.",
+    )
 
     budget = parser.add_argument_group("budget")
     budget.add_argument("--draft-samples", type=int, default=DRAFT_SAMPLES)
@@ -77,6 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
     budget.add_argument("--max-depth", type=int, default=MAX_DEPTH)
     budget.add_argument("--mimer-timeout", type=int, default=MIMER_TIMEOUT_SECONDS)
     budget.add_argument("--no-mimer", action="store_true", help="Skip Agda's auto.")
+    budget.add_argument("--place-holes", action="store_true",
+                        help="When a sketch fails to check, place holes where it fails "
+                             "instead of only asking again (proof/holes.py).")
 
     logging = parser.add_argument_group("logging")
     logging.add_argument("--runs-dir", default=str(RUNS_ROOT),
@@ -113,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     llm = ProofLLM(backend=backend, timeout=args.llm_timeout)
 
+    if args.formalizer:
+        llm = make_formalizer(llm, args.formalizer, args.formalizer_url, args.llm_timeout)
+        args.place_holes = True
+
     run_config = {
         key: value for key, value in vars(args).items()
         if key not in {"runs_dir", "tag", "no_log", "quiet"}
@@ -141,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.quiet:
             print(f"Logging to {logger.dir}")
 
-    agda_file, helpers_file, helper_goal_file, import_path = resolve_agda_paths(
+    agda_file, helpers_file, helper_goal_file, reference_file, import_path = resolve_agda_paths(
         args, isolate_into=(None if (logger is None or args.no_isolate) else logger.dir),
     )
     reset_helpers_file(helpers_file)
@@ -180,7 +200,11 @@ def main(argv: list[str] | None = None) -> int:
             max_depth=args.max_depth,
             history=ProofHistory(),
             verbose=not args.quiet,
+            place_holes=args.place_holes,
         )
+
+        if reference_file is not None:
+            compare_with_reference(result, reference_file, import_path, quiet=args.quiet)
     except BaseException as exc:  # log it, then re-raise (incl. KeyboardInterrupt)
         error = exc
         raise
@@ -223,11 +247,81 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.success else 1
 
 
+def make_formalizer(drafter: ProofLLM, model: str, base_url: str, timeout: int, path: str = ""):
+    """The autoformalize fine-tune, on its raw prompt with its card's sampling."""
+
+    backend = OllamaBackend(
+        model=model, base_url=base_url, think=None, raw=True,
+        temperature=0.6, top_p=0.95, num_predict=1024,
+    )
+    return FormalizerLLM(drafter=drafter, backend=backend, path=path, timeout=timeout)
+
+
+def introduced_lemmas(result: DSPResult) -> set[str]:
+    """Every lemma the run stated itself, at any depth (drafted or promoted)."""
+
+    names = {lemma.name for lemma in result.sketch.lemmas} if result.sketch else set()
+    names |= {
+        r.method.split("lemma:", 1)[1].split(" :: ", 1)[0].strip()
+        for r in result.gap_results if r.method.startswith("lemma:")
+    }
+    for sub in result.lemma_results:
+        names |= {sub.target_name} | introduced_lemmas(sub)
+    return names
+
+
+def compare_with_reference(
+    result: DSPResult, reference_file: Path, import_path: str, quiet: bool
+) -> None:
+    """
+    Decompose the reference proof and line the run up against it: the
+    finished proof if there is one, otherwise the last accepted sketch, so a
+    failed run still shows where its decomposition parted ways.
+    """
+
+    reference = log_decomposition(
+        reference_file, result.target_name, import_path, role="reference"
+    )
+
+    if reference is not None:
+        compare_with_decomposition(result, reference, quiet)
+
+
+def compare_with_decomposition(result: DSPResult, reference, quiet: bool = True):
+    """Line the run's proof (or last sketch) up against a reference decomposition."""
+
+    candidate, label = result.decomposition, "run proof"
+
+    if candidate is None and result.sketch is not None:
+        candidate, label = result.sketch.decomposition, "run sketch"
+
+    if candidate is None:
+        return None
+
+    try:
+        comparison = compare(candidate, reference, introduced=introduced_lemmas(result))
+    except Exception as error:  # analysis only; never fail a finished run
+        run_logger().event(
+            "decomposition_compare", ok=False, error=f"{type(error).__name__}: {error}"
+        )
+        return None
+
+    text = comparison.render(label, "reference")
+
+    run_logger().event("decomposition_compare", comparison=comparison, text=text)
+
+    if not quiet:
+        print(f"\n{text}")
+
+    return comparison
+
+
 def resolve_agda_paths(
     args: argparse.Namespace, isolate_into: Path | None
-) -> tuple[Path, Path, Path, str]:
+) -> tuple[Path, Path, Path, Path | None, str]:
     """
-    (target file, helpers file, helper-goal file, agda import path).
+    (target file, helpers file, helper-goal file, reference file or None,
+    agda import path).
 
     With `isolate_into`, the whole Agda tree is copied under that directory and
     the paths are re-rooted there, so the repository copy is never touched and
@@ -237,15 +331,16 @@ def resolve_agda_paths(
     agda_file = Path(args.file).resolve()
     helpers_file = Path(args.helpers_file).resolve()
     helper_goal_file = Path(args.helper_goal_file).resolve()
+    reference_file = Path(args.reference).resolve() if args.reference else None
     root = Path(args.import_path).resolve()
 
     if isolate_into is None:
-        return agda_file, helpers_file, helper_goal_file, str(root)
+        return agda_file, helpers_file, helper_goal_file, reference_file, str(root)
 
-    for path in (agda_file, helpers_file, helper_goal_file):
-        if root not in path.parents:
+    for path in (agda_file, helpers_file, helper_goal_file, reference_file):
+        if path is not None and root not in path.parents:
             print(f"warning: {path} is outside {root}; running without isolation")
-            return agda_file, helpers_file, helper_goal_file, str(root)
+            return agda_file, helpers_file, helper_goal_file, reference_file, str(root)
 
     copy_root = isolate_into / root.name
     shutil.copytree(
@@ -258,7 +353,9 @@ def resolve_agda_paths(
         return copy_root / path.relative_to(root)
 
     return (
-        rerooted(agda_file), rerooted(helpers_file), rerooted(helper_goal_file), str(copy_root)
+        rerooted(agda_file), rerooted(helpers_file), rerooted(helper_goal_file),
+        rerooted(reference_file) if reference_file is not None else None,
+        str(copy_root),
     )
 
 
