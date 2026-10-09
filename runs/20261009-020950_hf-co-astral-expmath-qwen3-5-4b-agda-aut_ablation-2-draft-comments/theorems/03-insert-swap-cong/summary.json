@@ -1,0 +1,35 @@
+{
+  "run_id": "03-insert-swap-cong",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:11:28.411880+00:00",
+  "finished_at": "2026-10-09T02:12:34.127744+00:00",
+  "elapsed_s": 65.715,
+  "event_counts": {
+    "llm_call": 6,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 8,
+    "sketch_attempt": 4,
+    "dsp_result": 2,
+    "sketch_repair": 1,
+    "decomposition": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 1,
+    "mimer": 1,
+    "gap_result": 1,
+    "promote": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 13470,
+    "output_tokens": 3144
+  },
+  "result": null,
+  "success": null,
+  "target": "insert-swap-cong",
+  "error": null,
+  "llm_calls": 6
+}

@@ -1,0 +1,34 @@
+{
+  "run_id": "07-1--involutive",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:05:57.468680+00:00",
+  "finished_at": "2026-10-09T02:06:20.331758+00:00",
+  "elapsed_s": 22.863,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 1,
+    "agda_check": 2,
+    "sketch_repair": 1,
+    "decomposition": 1,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 1,
+    "mimer": 1,
+    "gap_result": 1,
+    "promote": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 1150,
+    "output_tokens": 24
+  },
+  "result": null,
+  "success": null,
+  "target": "1/-involutive",
+  "error": null,
+  "llm_calls": 1
+}

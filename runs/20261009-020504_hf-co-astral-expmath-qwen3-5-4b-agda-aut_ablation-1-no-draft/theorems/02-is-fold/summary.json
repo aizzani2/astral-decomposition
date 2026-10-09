@@ -1,0 +1,36 @@
+{
+  "run_id": "02-is-fold",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:05:04.825478+00:00",
+  "finished_at": "2026-10-09T02:06:17.122889+00:00",
+  "elapsed_s": 72.297,
+  "event_counts": {
+    "drafts_ready": 3,
+    "llm_call": 7,
+    "sketch_repair": 7,
+    "agda_check": 22,
+    "sketch_attempt": 7,
+    "decomposition": 2,
+    "prove_start": 2,
+    "gap_start": 6,
+    "gap_candidate": 6,
+    "mimer": 3,
+    "gap_result": 6,
+    "promote": 3,
+    "lemma_start": 2,
+    "dsp_result": 3,
+    "lemma_end": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 9389,
+    "output_tokens": 1426
+  },
+  "result": null,
+  "success": null,
+  "target": "*+-is-fold",
+  "error": null,
+  "llm_calls": 7
+}

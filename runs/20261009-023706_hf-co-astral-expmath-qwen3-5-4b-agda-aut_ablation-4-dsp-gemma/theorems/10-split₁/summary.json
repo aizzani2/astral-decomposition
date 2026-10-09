@@ -1,0 +1,27 @@
+{
+  "run_id": "10-split₁",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:43:06.081026+00:00",
+  "finished_at": "2026-10-09T02:43:51.914535+00:00",
+  "elapsed_s": 45.833,
+  "event_counts": {
+    "llm_call": 6,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 8,
+    "sketch_repair": 4,
+    "sketch_attempt": 4,
+    "dsp_result": 2
+  },
+  "token_totals": {
+    "prompt_tokens": 11240,
+    "output_tokens": 1491
+  },
+  "result": null,
+  "success": null,
+  "target": "split₁_⟩∘⟨_",
+  "error": null,
+  "llm_calls": 6
+}

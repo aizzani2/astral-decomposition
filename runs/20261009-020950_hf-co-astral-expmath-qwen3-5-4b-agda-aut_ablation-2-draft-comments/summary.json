@@ -1,0 +1,18 @@
+{
+  "run_id": "20261009-020950_hf-co-astral-expmath-qwen3-5-4b-agda-aut_ablation-2-draft-comments",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "ablation-2-draft-comments",
+  "started_at": "2026-10-09T02:09:50.572468+00:00",
+  "finished_at": "2026-10-09T02:22:48.135933+00:00",
+  "elapsed_s": 777.563,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 6,
+  "wall_s": 777.6
+}

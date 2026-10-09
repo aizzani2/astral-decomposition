@@ -1,0 +1,29 @@
+{
+  "run_id": "20261008-221407_gemma4-12b_library-sample24",
+  "model": "gemma4:12b",
+  "backend": "ollama",
+  "tag": "library-sample24",
+  "started_at": "2026-10-08T22:14:07.692213+00:00",
+  "finished_at": "2026-10-08T22:31:53.484814+00:00",
+  "elapsed_s": 1065.792,
+  "event_counts": {
+    "llm_call": 83,
+    "draft": 24,
+    "agda_check": 115,
+    "gap_start": 13,
+    "gap_candidate": 26,
+    "mimer": 13,
+    "gap_result": 13,
+    "library_result": 12
+  },
+  "token_totals": {
+    "prompt_tokens": 210652,
+    "output_tokens": 36698
+  },
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "llm_calls": 83,
+  "wall_s": 1065.8
+}

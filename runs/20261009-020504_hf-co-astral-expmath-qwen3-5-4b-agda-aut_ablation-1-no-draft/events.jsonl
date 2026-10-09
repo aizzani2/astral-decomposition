@@ -1,0 +1,1 @@
+{"seq": 1, "ts": "2026-10-09T02:09:50.435271+00:00", "t": 285.621, "kind": "run_end", "elapsed_s": 285.621, "success": null, "target": null, "error": null, "theorems": 24, "proved": 8, "wall_s": 285.6}

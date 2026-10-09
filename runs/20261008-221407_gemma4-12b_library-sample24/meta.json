@@ -1,0 +1,28 @@
+{
+  "run_id": "20261008-221407_gemma4-12b_library-sample24",
+  "started_at": "2026-10-08T22:14:07.692213+00:00",
+  "model": "gemma4:12b",
+  "backend": "ollama",
+  "tag": "library-sample24",
+  "config": {
+    "sample": "/tmp/claude-1000/-home-jamie-agda-astral-decomposition/308ed366-d176-41d5-9302-6c6e420e3641/scratchpad/sample24.json",
+    "model": "gemma4:12b",
+    "base_url": "http://localhost:11435",
+    "agda_bin": "/home/jamie/agda/tools/agda-2.8.0/agda",
+    "library_file": "/home/jamie/agda/data/libraries-2.8.0",
+    "checkouts": "/home/jamie/agda/data",
+    "limit": null,
+    "sketch_attempts": 3,
+    "gap_llm_attempts": 1,
+    "max_gaps": 6,
+    "no_mimer": false,
+    "tag": "library-sample24",
+    "runs_dir": "/home/jamie/agda/astral-decomposition/runs"
+  },
+  "git_commit": "536a59c",
+  "git_dirty": true,
+  "agda_version": "Agda version 2.6.4.3",
+  "python": "3.12.12",
+  "hostname": "wintermute",
+  "cwd": "/home/jamie/agda/astral-decomposition/code"
+}
