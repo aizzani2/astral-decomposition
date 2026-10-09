@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.agda_client import check_sketch
-from core.config import AGDA_IMPORT_PATH
 from core.proof_files import preserved_file
 from util.agda_source import (
     META_RE,
@@ -84,7 +83,7 @@ def export_sketch(
     agda_file: Path,
     name: str,
     granularity: str = "step",
-    import_path: str = AGDA_IMPORT_PATH,
+    import_path: str | None = None,
     decomposition: Decomposition | None = None,
     annotate: bool = False,
     congruences: tuple[str, ...] = DEFAULT_CONGRUENCES,

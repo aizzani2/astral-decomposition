@@ -16,7 +16,6 @@ Two things this adds over the previous single-shot version:
 
 from __future__ import annotations
 
-import functools
 import json
 import re
 import subprocess
@@ -26,9 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core import config
 from core.config import (
-    AGDA_IMPORT_PATH,
     AGDA_TIMEOUT_SECONDS,
     MIMER_TIMEOUT_SECONDS,
 )
@@ -73,7 +70,7 @@ class AgdaSession:
     def __init__(
         self,
         filename: Path,
-        import_path: str = AGDA_IMPORT_PATH,
+        import_path: str | None = None,
         timeout: int = AGDA_TIMEOUT_SECONDS,
     ) -> None:
         timeout = max(timeout, MIMER_TIMEOUT_SECONDS + 10)
@@ -85,7 +82,7 @@ class AgdaSession:
 
     def __enter__(self) -> "AgdaSession":
         self.proc = subprocess.Popen(
-            [config.AGDA_BIN, *config.AGDA_FLAGS, "-i", self.import_path, "--interaction-json"],
+            _agda_command(self.import_path, "--interaction-json"),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -338,7 +335,7 @@ class AgdaSession:
         args = [f"-t {int(timeout)}"] + [h for h in (hints or []) if h.strip()]
         argument = " ".join(args)
 
-        self._send(f'Cmd_autoOne {_auto_rewrite()}{goal_id} noRange "{argument}"')
+        self._send(f'Cmd_autoOne AsIs {goal_id} noRange "{argument}"')
 
         objects = self._read_objects(
             lambda objs: any(
@@ -377,7 +374,7 @@ class AgdaSession:
 
         args += [h for h in (hints or []) if h.strip()]
 
-        self._send(f'Cmd_autoOne {_auto_rewrite()}{goal_id} noRange "{" ".join(args)}"')
+        self._send(f'Cmd_autoOne AsIs {goal_id} noRange "{" ".join(args)}"')
 
         objects = self._read_objects(
             lambda objs: any(
@@ -576,37 +573,24 @@ def _interpret_context(objects: list[dict[str, Any]]) -> list[ContextEntry]:
     return entries
 
 
-@functools.lru_cache(maxsize=None)
-def _agda_version(binary: str) -> tuple[int, ...]:
-    try:
-        out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.TimeoutExpired):
-        return ()
+def _agda_command(import_path: str | None, *args: str) -> list[str]:
+    """`agda` with an include directory, if any (a project's .agda-lib gives its own)."""
 
-    match = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
-
-    return tuple(int(x) for x in match.groups()) if match else ()
-
-
-def _auto_rewrite() -> str:
-    """Agda 2.7 added a rewrite mode to `Cmd_autoOne`; older versions reject it."""
-
-    return "AsIs " if _agda_version(config.AGDA_BIN) >= (2, 7) else ""
+    return ["agda", *(["-i", import_path] if import_path else []), *args]
 
 
 def parse_auto_listing(text: str) -> list[str]:
     """
-    Parse `Listing solution(s) 0-9\n0  term\n(continued)\n1  term ...`
-    (Agda 2.6) or `Solutions:\n  0. term\n  1. term` (Agda 2.8).
-    Continuation lines of a multi-line term do not start with an index.
+    Parse Mimer's `Solutions:\n  0. term\n  1. term` listing. Continuation
+    lines of a multi-line term do not start with an index.
     """
 
     solutions: list[str] = []
     current: list[str] = []
-    index_line = re.compile(r"^\s*(\d+)(?:\.\s+|\s{2,})(.*)$")
+    index_line = re.compile(r"^\s*(\d+)\.\s+(.*)$")
 
     for line in text.splitlines():
-        if line.startswith(("Listing ", "No solution", "Solutions:")):
+        if line.startswith(("No solution", "Solutions:")):
             continue
 
         match = index_line.match(line)
@@ -687,18 +671,9 @@ def _interpret_auto(objects: list[dict[str, Any]]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def load_agda_and_get_first_goal(
-    filename: Path,
-    import_path: str = AGDA_IMPORT_PATH,
-    timeout: int = AGDA_TIMEOUT_SECONDS,
-) -> AgdaLoadResult:
-    with AgdaSession(filename, import_path=import_path, timeout=timeout) as session:
-        return session.load()
-
-
 def load_agda_and_get_all_goals(
     filename: Path,
-    import_path: str = AGDA_IMPORT_PATH,
+    import_path: str | None = None,
     with_context: bool = False,
     timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaLoadResult:
@@ -719,7 +694,7 @@ def load_agda_and_get_all_goals(
 
 def check_sketch(
     filename: Path,
-    import_path: str = AGDA_IMPORT_PATH,
+    import_path: str | None = None,
     with_context: bool = True,
     timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> SketchCheckResult:
@@ -775,7 +750,7 @@ def _project_root(filename: Path) -> str | None:
 
 def run_plain_agda(
     filename: Path,
-    import_path: str = AGDA_IMPORT_PATH,
+    import_path: str | None = None,
     timeout: int = AGDA_TIMEOUT_SECONDS,
 ) -> AgdaCheckResult:
     started = time.monotonic()
@@ -783,7 +758,7 @@ def run_plain_agda(
 
     try:
         result = subprocess.run(
-            [config.AGDA_BIN, *config.AGDA_FLAGS, "-i", import_path, str(filename)],
+            _agda_command(import_path, str(filename)),
             capture_output=True,
             text=True,
             timeout=timeout,

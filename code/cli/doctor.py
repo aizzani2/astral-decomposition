@@ -1,21 +1,19 @@
 """
 Check that everything a library run needs is in place.
 
-    python cli/doctor.py [--model qwen3.5:4b --base-url http://localhost:11435]
-                         [--formalizer ... --formalizer-url ...] [--write-library-file]
+    python cli/doctor.py [--model claude-sonnet-5-5 | --model qwen3.5:4b --base-url URL]
 
-Checks the Agda binary (the library snapshots need 2.8), the Agda library
-file and the libraries it lists, each checkout at the commit the datasets pin,
-the downloaded datasets, pyarrow, and that the drafting and formalizing
-models are served. Prints one line per check and exits 1 if any failed.
-`--write-library-file` (re)writes the library file from the checkouts.
+Checks `agda` (the library snapshots need 2.8), that the standard library
+agda-categories and agda-algebras depend on (standard-library-2.3) is
+registered in Agda's libraries file, each checkout at the commit the datasets
+pin, the downloaded datasets, pyarrow, and that the model is reachable.
+Prints one line per check and exits 1 if any failed.
 """
 
 from __future__ import annotations
 
 import argparse
 import subprocess
-import sys
 from pathlib import Path
 
 import requests
@@ -28,25 +26,18 @@ DATASETS = ("agda-decls", "agda-informalize-stdlib", "agda-autoformalize-context
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--model", default=config.DEFAULT_MODEL, help="The drafting model.")
+    parser.add_argument("--model", default=config.DEFAULT_MODEL, help="Ollama tag or Claude id.")
     parser.add_argument("--base-url", default=config.OLLAMA_BASE_URL)
-    parser.add_argument("--formalizer", default=config.FORMALIZER_MODEL)
-    parser.add_argument("--formalizer-url", default=config.FORMALIZER_URL)
-    parser.add_argument("--write-library-file", action="store_true")
     args = parser.parse_args(argv)
-
-    if args.write_library_file:
-        write_library_file()
 
     checks = [
         check_agda(),
-        check_library_file(),
+        check_dependency_library(),
         *[check_checkout(repo.split("/")[-1], commit) for repo, commit in PINNED.items()],
         check_checkout(STDLIB_2_3[0], None),
         *[check_dataset(name) for name in DATASETS],
         check_import("pyarrow", "pip install -e '.[data]'"),
-        check_model("drafter", args.model, args.base_url),
-        check_model("formalizer", args.formalizer, args.formalizer_url),
+        check_model(args.model, args.base_url),
     ]
 
     for ok, label, detail in checks:
@@ -57,22 +48,30 @@ def main(argv: list[str] | None = None) -> int:
 
 def check_agda() -> tuple[bool, str, str]:
     try:
-        out = subprocess.run([config.AGDA_BIN, "--version"], capture_output=True, text=True, timeout=10).stdout
+        out = subprocess.run(["agda", "--version"], capture_output=True, text=True, timeout=10).stdout
     except OSError as error:
-        return False, f"Agda ({config.AGDA_BIN})", str(error)
+        return False, "agda", str(error)
 
     version = out.split("version", 1)[-1].split()[0] if "version" in out else "?"
     ok = tuple(int(p) for p in version.split(".")[:2] if p.isdigit()) >= (2, 8)
-    hint = "" if ok else "  (library runs need 2.8: set AGDA_BIN)"
-    return ok, f"Agda ({config.AGDA_BIN})", version + hint
+    return ok, "agda", version + ("" if ok else "  (library runs need 2.8)")
 
 
-def check_library_file() -> tuple[bool, str, str]:
-    path = config.AGDA_LIBRARY_FILE
-    if not path.exists():
-        return False, "Agda library file", f"{path} missing (--write-library-file)"
-    missing = [l for l in path.read_text().split() if l and not Path(l).exists()]
-    return not missing, "Agda library file", f"{path}" + (f"; missing: {', '.join(missing)}" if missing else "")
+def check_dependency_library() -> tuple[bool, str, str]:
+    """standard-library-2.3 in the libraries file Agda 2.8 reads."""
+
+    label = f"{STDLIB_2_3[0]} registered"
+    try:
+        app_dir = Path(subprocess.run(["agda", "--print-agda-app-dir"], capture_output=True,
+                                      text=True, timeout=10).stdout.strip())
+    except OSError as error:
+        return False, label, str(error)
+
+    files = [app_dir / "libraries-2.8.0", app_dir / "libraries"]
+    listed = [line.strip() for f in files if f.exists() for line in f.read_text().splitlines()]
+    wanted = config.CHECKOUTS_ROOT / STDLIB_2_3[0] / "standard-library.agda-lib"
+    ok = any(Path(line).expanduser().resolve() == wanted.resolve() for line in listed if line)
+    return ok, label, (str(files[0]) if ok else f"add {wanted} to {files[0]}")
 
 
 def check_checkout(name: str, commit: str | None) -> tuple[bool, str, str]:
@@ -102,7 +101,11 @@ def check_import(module: str, hint: str) -> tuple[bool, str, str]:
         return False, module, hint
 
 
-def check_model(role: str, model: str, url: str) -> tuple[bool, str, str]:
+def check_model(model: str, url: str) -> tuple[bool, str, str]:
+    if model.startswith("claude"):
+        return check_import("anthropic", "pip install -e '.[claude]'")
+
+    role = "model"
     try:
         tags = requests.get(f"{url.rstrip('/')}/api/tags", timeout=5).json()
     except Exception as error:
@@ -110,18 +113,6 @@ def check_model(role: str, model: str, url: str) -> tuple[bool, str, str]:
     names = [m.get("name", "") for m in tags.get("models", [])]
     ok = any(n == model or n.split(":")[0] == model for n in names)
     return ok, f"{role} ({url})", model if ok else f"{model} not served (has {len(names)} models)"
-
-
-def write_library_file() -> None:
-    """The library file for Agda: the stdlib 2.3 the other libraries depend on, and them."""
-
-    root = config.CHECKOUTS_ROOT
-    libs = [root / STDLIB_2_3[0] / "standard-library.agda-lib"] + [
-        lib for repo in PINNED if repo != "agda/agda-stdlib"
-        for lib in sorted((root / repo.split("/")[-1]).glob("*.agda-lib"))
-    ]
-    config.AGDA_LIBRARY_FILE.write_text("\n".join(str(l) for l in libs) + "\n")
-    print(f"wrote {config.AGDA_LIBRARY_FILE}", file=sys.stderr)
 
 
 if __name__ == "__main__":

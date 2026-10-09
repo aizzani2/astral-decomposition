@@ -1,4 +1,4 @@
-"""Hole placement helpers, model output parsing, lemma layouts, comparison. No Agda."""
+"""Hole placement helpers, model output parsing, the lemma layout, comparison. No Agda."""
 
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from proof.holes import (
     sketch_clauses,
     split_declaration,
 )
-from proof.layout import REGION_END, REGION_START, HelpersFileLayout, InFileLayout
+from proof.layout import REGION_END, REGION_START, Layout
 from util.deproof import ClauseDecomposition, Decomposition, ProofStep, compare
 
 
@@ -55,10 +55,10 @@ def test_split_declaration_multiline_signature():
     assert clauses == "lem n = refl"
 
 
-def test_in_file_layout_composes_and_blames(tmp_path: Path):
+def test_layout_composes_and_blames(tmp_path: Path):
     f = tmp_path / "M.agda"
     f.write_text("{-# OPTIONS --safe #-}\nmodule M where\n  thm : Nat\n  thm = zero\n  after : Nat\n  after = thm\n")
-    layout = InFileLayout(f, "thm")
+    layout = Layout(f, "thm")
     text = f.read_text()
 
     assert "--safe" not in text                      # postulates must be allowed
@@ -79,13 +79,6 @@ def test_in_file_layout_composes_and_blames(tmp_path: Path):
     assert layout.has_postulates()
     layout.restore([])
     assert not layout.has_postulates()
-
-
-def test_helpers_layout_blames_in_helpers_file(tmp_path: Path):
-    helpers = tmp_path / "Helpers.agda"
-    helpers.write_text("module Tests.Helpers where\n\npostulate\n  l1 : Nat\n")
-    layout = HelpersFileLayout(helpers, tmp_path / "HelperGoal.agda")
-    assert layout.lemma_at_error("Helpers.agda:4.8-11: error", [ProofObligation("l1", "Nat")]) == "l1"
 
 
 def _decomposition(name, clauses, lemmas, normal=None):

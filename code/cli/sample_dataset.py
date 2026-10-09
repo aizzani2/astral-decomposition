@@ -4,7 +4,7 @@ Draw a sample of library theorems for cli/run_dsp_dataset.py.
     python cli/sample_dataset.py --per-repo 8 --chains 4 --seed 11 --out samples/test24.json
 
 Theorems come from the held-out test split of agda-autoformalize-context, so
-the formalizer has not been trained on them, and each comes with its prompt
+the autoformalize fine-tune was not trained on them, and each comes with its prompt
 (file, header, context, informal statement). Per repo it keeps lemmas and
 theorems whose proof is at most `--max-lines` long and not a constructor,
 field, postulate and so on, and takes `--chains` whose proof is an equational

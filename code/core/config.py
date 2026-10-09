@@ -1,5 +1,4 @@
 import os
-import shlex
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -30,18 +29,13 @@ OLLAMA_TEMPERATURE = 0.6
 OLLAMA_TOP_P = 0.95
 
 # Anthropic (Claude). Thinking is adaptive; effort is the knob.
-ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-5"
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-5-5"
 ANTHROPIC_EFFORT = "high"
 ANTHROPIC_MAX_TOKENS = 16000
 
 # ---------------------------------------------------------------------------
 # Search budget
 # ---------------------------------------------------------------------------
-
-# Legacy single-shot pipeline
-DIRECT_MAX_ATTEMPTS = 3
-SINGLE_MAX_ATTEMPTS = 3
-HELPER_MAX_ATTEMPTS = 5
 
 # DSP pipeline
 DRAFT_SAMPLES = 4  # informal proofs sampled per problem
@@ -57,26 +51,19 @@ MAX_DEPTH = 3  # recursion depth for lemmas
 # Agda
 # ---------------------------------------------------------------------------
 
-# The Agda binary. The datasets' stdlib snapshot needs Agda 2.8.0 while the
-# system Agda is 2.6.4.3, so point this at another build (e.g.
-# AGDA_BIN=/home/jamie/agda/tools/agda-2.8.0/agda) rather than replacing it.
-AGDA_BIN = os.environ.get("AGDA_BIN", "agda")
-
-# Extra flags for every Agda invocation. A library checkout wants
-# `--no-default-libraries`: ~/.config/agda/defaults names a stdlib installed
-# for the system Agda, which another Agda version then fails to find.
-AGDA_FLAGS: list[str] = shlex.split(os.environ.get("AGDA_FLAGS", ""))
-
-AGDA_ERROR_MAX_CHARS = 4000
+# Agda 2.8.0, as `agda` on PATH. A checkout's library dependencies
+# (standard-library-2.3 for agda-categories and agda-algebras) must be
+# registered in Agda's libraries file; cli/doctor.py checks.
 AGDA_TIMEOUT_SECONDS = 30
 
 # Mimer (Agda's `auto`) is our Sledgehammer. It only uses lemmas it is given
-# as hints, so the hammer passes it every name in scope. Seconds.
+# as hints. Seconds.
 MIMER_TIMEOUT_SECONDS = 5
+# Offered to Mimer on every hole besides the run's lemmas and the names the
+# model used. A name not in scope in the file is dropped when Agda rejects it.
+MIMER_BASE_HINTS = ("sym", "trans", "cong")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-AGDA_ROOT = PROJECT_ROOT / "agda_files"
-AGDA_IMPORT_PATH = str(AGDA_ROOT)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -93,12 +80,3 @@ RUNS_ROOT = PROJECT_ROOT / "runs"
 CHECKOUTS_ROOT = Path(os.environ.get("ASTRAL_CHECKOUTS", PROJECT_ROOT.parent / "data"))
 # Downloaded datasets (hf download --local-dir <here>/<name>).
 DATASETS_ROOT = Path(os.environ.get("ASTRAL_DATASETS", CHECKOUTS_ROOT / "hf"))
-# Agda library file listing each library's .agda-lib: agda-categories and
-# agda-algebras depend on standard-library-2.3.
-AGDA_LIBRARY_FILE = Path(os.environ.get("AGDA_LIBRARY_FILE", CHECKOUTS_ROOT / "libraries-2.8.0"))
-
-# The autoformalize fine-tune, served by Ollama (see README).
-FORMALIZER_MODEL = os.environ.get(
-    "FORMALIZER_MODEL", "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0"
-)
-FORMALIZER_URL = os.environ.get("FORMALIZER_URL", "http://localhost:11436")

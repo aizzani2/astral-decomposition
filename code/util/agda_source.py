@@ -342,3 +342,35 @@ def is_pi_type(goal: str) -> bool:
             return True
 
     return goal.lstrip().startswith("∀")
+
+
+def get_signature_line(source: str, target_name: str) -> str:
+    """
+    Return target_name's signature on one line, with its continuation lines
+    (a signature may span several) joined.
+
+    Example:
+        plusZero : (n : Nat) → n + 0 ≡ n
+    """
+
+    prefix = f"{target_name} :"
+    lines = source.splitlines()
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+
+        if not stripped.startswith(prefix):
+            continue
+
+        column = len(line) - len(line.lstrip())
+        parts = [stripped]
+
+        for follow in lines[index + 1:]:
+            if follow.strip() and len(follow) - len(follow.lstrip()) > column:
+                parts.append(follow.strip())
+            else:
+                break
+
+        return " ".join(parts)
+
+    raise ValueError(f"Could not find signature line for {target_name}.")

@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.config import AGDA_IMPORT_PATH, AGDA_TIMEOUT_SECONDS, MIMER_TIMEOUT_SECONDS
+from core.config import AGDA_TIMEOUT_SECONDS, MIMER_TIMEOUT_SECONDS
 from core.agda_client import AgdaSession, AutoError, check_sketch
 from core.llm_client import ProofLLM
 from core.proof_state import GapResult, SketchGap
@@ -49,7 +49,7 @@ class HammerConfig:
     mimer_timeout: int = MIMER_TIMEOUT_SECONDS
     mimer_candidates: int = 10   # how many of Mimer's listed solutions to typecheck
     llm_attempts: int = 2
-    import_path: str = AGDA_IMPORT_PATH
+    import_path: str | None = None
     # Per Agda load. The test files load in a second; a library module with
     # its imports can take minutes cold.
     agda_timeout: int = AGDA_TIMEOUT_SECONDS

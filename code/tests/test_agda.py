@@ -1,4 +1,4 @@
-"""Agda-backed checks on the toy tree, including the whole DSP pipeline with a scripted model."""
+"""Agda-backed checks on the fixture project, including the whole DSP pipeline with a scripted model."""
 
 from pathlib import Path
 
@@ -13,12 +13,12 @@ from util.sketch_export import export_sketch
 
 
 @needs_agda
-def test_holes_and_unsolved_metas(toy_tree: Path):
-    f = write_target(toy_tree, "g : (n : Nat) → n + 0 ≡ n\ng n = {!!}")
-    assert check_sketch(f, import_path=str(toy_tree), with_context=False).kind == "holes"
+def test_holes_and_unsolved_metas(project: Path):
+    f = write_target(project, "g : (n : Nat) → n + 0 ≡ n\ng n = {!!}")
+    assert check_sketch(f, with_context=False).kind == "holes"
 
     f.write_text(f.read_text().replace("{!!}", "_"))
-    result = check_sketch(f, import_path=str(toy_tree), with_context=False)
+    result = check_sketch(f, with_context=False)
     assert result.kind == "error" and "Unsolved metas" in result.message
 
 
@@ -34,15 +34,15 @@ addComm (suc n) m = trans (congSuc (addComm n m)) (sym (plusSucRight m n))
 
 
 @needs_agda
-def test_decompose_and_export_step_sketch(toy_tree: Path):
-    f = write_target(toy_tree, ADD_COMM)
+def test_decompose_and_export_step_sketch(project: Path):
+    f = write_target(project, ADD_COMM)
     before = f.read_text()
-    d = decompose(f, "addComm", str(toy_tree))
+    d = decompose(f, "addComm")
 
     assert [len(c.steps) for c in d.clauses] == [1, 2]
     assert d.clauses[1].steps[0].recursive
 
-    sketch = export_sketch(f, "addComm", "step", str(toy_tree), decomposition=d)
+    sketch = export_sketch(f, "addComm", "step", decomposition=d)
     assert sketch.valid and len(sketch.holes) == 3
     assert f.read_text() == before                       # file restored
 
@@ -63,18 +63,17 @@ plusZero (suc n) = {!!}
 
 
 @needs_agda
-def test_dsp_pipeline_end_to_end_with_scripted_model(toy_tree: Path):
-    target = write_target(toy_tree, "plusZero : (n : Nat) → n + 0 ≡ n\nplusZero n = {!!}")
+def test_dsp_pipeline_end_to_end_with_scripted_model(project: Path):
+    target = write_target(project, "plusZero : (n : Nat) → n + 0 ≡ n\nplusZero n = {!!}")
     llm = ProofLLM(backend=EchoBackend(responses=[DRAFT, SKETCH]))
 
     result = prove_dsp(
-        agda_file=target,
-        helpers_file=toy_tree / "Tests" / "Helpers.agda",
-        helper_goal_file=toy_tree / "Tests" / "HelperGoal.agda",
+        target,
+        "plusZero",
         llm=llm,
         draft_samples=1,
         sketch_max_attempts=1,
-        hammer=HammerConfig(llm_attempts=0, import_path=str(toy_tree)),
+        hammer=HammerConfig(llm_attempts=0),
         history=ProofHistory(),
         verbose=False,
     )
@@ -86,21 +85,21 @@ def test_dsp_pipeline_end_to_end_with_scripted_model(toy_tree: Path):
 
 
 @needs_agda
-def test_session_hammer_rejects_non_terminating_recursion(toy_tree: Path):
+def test_session_hammer_rejects_non_terminating_recursion(project: Path):
     from core.agda_client import AgdaSession
     from core.hammer import close_gap
     from util.sketch_ops import build_gaps
 
-    f = write_target(toy_tree, "plusZero : (n : Nat) → n + 0 ≡ n\nplusZero zero = refl\nplusZero (suc n) = {!!}")
+    f = write_target(project, "plusZero : (n : Nat) → n + 0 ≡ n\nplusZero zero = refl\nplusZero (suc n) = {!!}")
     source = f.read_text()
-    check = check_sketch(f, import_path=str(toy_tree), with_context=True)
+    check = check_sketch(f, with_context=True)
     gap = build_gaps(source, check.goals)[0]
     config = HammerConfig(
         tactics=("plusZero (suc n)", "congSuc (plusZero n)"), use_mimer=False,
-        llm_attempts=0, import_path=str(toy_tree),
+        llm_attempts=0,
     )
 
-    with AgdaSession(f, import_path=str(toy_tree)) as session:
+    with AgdaSession(f) as session:
         session.load()
         result = close_gap(f, source, gap, config=config, target_name="plusZero",
                            verbose=False, session=session)
@@ -116,18 +115,17 @@ symm = {!!}
 
 
 @needs_agda
-def test_function_typed_hole_gets_binders_and_no_draft(toy_tree: Path):
-    target = write_target(toy_tree, "symm : {x y : Nat} → x ≡ y → y ≡ x\nsymm = {!!}")
+def test_function_typed_hole_gets_binders_and_no_draft(project: Path):
+    target = write_target(project, "symm : {x y : Nat} → x ≡ y → y ≡ x\nsymm = {!!}")
     llm = ProofLLM(backend=EchoBackend(responses=[POINT_FREE_SKETCH]))   # no draft call
 
     result = prove_dsp(
-        agda_file=target,
-        helpers_file=toy_tree / "Tests" / "Helpers.agda",
-        helper_goal_file=toy_tree / "Tests" / "HelperGoal.agda",
+        target,
+        "symm",
         llm=llm,
         draft=False,
         sketch_max_attempts=1,
-        hammer=HammerConfig(llm_attempts=0, import_path=str(toy_tree)),
+        hammer=HammerConfig(llm_attempts=0),
         history=ProofHistory(),
         verbose=False,
     )
@@ -136,41 +134,51 @@ def test_function_typed_hole_gets_binders_and_no_draft(toy_tree: Path):
     assert "λ" in result.final_source                    # the binder Agda introduced
 
 
-@needs_agda
-def test_formalizer_hole_promotion_and_recursion(toy_tree: Path):
-    """
-    The formalizer's proof has a wrong term; a hole goes there; with the
-    hammer held off, the hole becomes a lemma over the clause's variables
-    (its hypothesis included), which the formalizer then proves one level down.
-    """
+PROMOTE_SKETCH = """</AGDA_LEMMAS>
+<AGDA_SKETCH>
+flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n
+-- flip the hypothesis
+flipEq n m eq = sym {!!}
+"""
 
-    from proof.formalizer import FormalizerLLM
+LEMMA_SKETCH = """</AGDA_LEMMAS>
+<AGDA_SKETCH>
+flipEq-gap0 : (n m : Nat) → suc n ≡ m → suc n ≡ m
+flipEq-gap0 n m eq = {!!}
+"""
+
+
+@needs_agda
+def test_stuck_hole_promoted_to_lemma_and_proved(project: Path):
+    """
+    The model's term for the hole is wrong and the hammer is held off, so the
+    hole becomes a lemma (stated by the model, hypothesis included), applied
+    to the clause's variables and proved one level down.
+    """
 
     target = write_target(
-        toy_tree, "flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\nflipEq n m eq = {!!}"
+        project, "flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\nflipEq n m eq = {!!}"
     )
-    formalizer = FormalizerLLM(
-        drafter=ProofLLM(backend=EchoBackend(responses=[])),
-        backend=EchoBackend(responses=[
-            "flipEq zero m eq = sym eq\nflipEq (suc n) m eq = nonsense eq",   # theorem
-            "flipEq-gap0 n m eq = sym eq",                                     # promoted lemma
-        ]),
-    )
+    llm = ProofLLM(backend=EchoBackend(responses=[
+        PROMOTE_SKETCH,
+        "nonsense",                                   # the hole's term: wrong
+        "(n m : Nat) → suc n ≡ m → suc n ≡ m",        # the lemma's statement
+        LEMMA_SKETCH,
+        "eq",                                         # the lemma's hole
+    ]))
 
     result = prove_dsp(
-        agda_file=target,
-        helpers_file=toy_tree / "Tests" / "Helpers.agda",
-        helper_goal_file=toy_tree / "Tests" / "HelperGoal.agda",
-        llm=formalizer,
+        target,
+        "flipEq",
+        llm=llm,
         draft=False,
         sketch_max_attempts=1,
-        hammer=HammerConfig(tactics=(), use_mimer=False, llm_attempts=0, import_path=str(toy_tree)),
+        hammer=HammerConfig(tactics=(), use_mimer=False, llm_attempts=1),
         history=ProofHistory(),
         verbose=False,
-        place_holes=True,
     )
 
     assert result.success, result.output
     lemma = [r for r in result.gap_results if r.method.startswith("lemma:")]
-    assert lemma and "(eq : suc (suc n) ≡ m)" in lemma[0].method   # hypothesis kept
+    assert lemma and lemma[0].solution == "flipEq-gap0 n m eq"
     assert result.lemma_results and result.lemma_results[0].success

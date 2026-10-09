@@ -1,20 +1,11 @@
 """
-Where a DSP run keeps its lemmas.
+Where a DSP run keeps its lemmas: in the theorem's own file, in a region just
+above the declaration being proved.
 
 `prove_dsp` postulates the lemmas a sketch declares, checks the sketch against
 them, then proves each lemma by recursing and keeps the proved declaration.
-Where those lemmas live depends on the problem:
-
-    HelpersFileLayout   the test setup: lemmas live in their own module
-                        (Tests.Helpers), which the target imports; each lemma
-                        is proved in a one-declaration file (Tests.HelperGoal)
-
-    InFileLayout        a theorem inside a library file: its lemmas can need the
-                        module's parameters and private names, so they live in
-                        the same file, just above the declaration being proved;
-                        each lemma is proved in place
-
-Both offer the same operations, used at the same points of the pipeline.
+A library theorem's lemmas can need the module's parameters and private
+names, so they live in the same module; each lemma is proved in place.
 """
 
 from __future__ import annotations
@@ -22,94 +13,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from core.proof_files import (
-    append_helper_declaration,
-    append_postulates,
-    restore_file,
-    save_file,
-    write_helper_goal_file,
-)
 from core.proof_state import ProofObligation
 from util.agda_source import declaration_span
-from util.source_edit import ensure_import, replace_top_level_decl
-
-HELPERS_IMPORT = "open import Tests.Helpers"
 
 REGION_START = "-- dsp: lemmas"
 REGION_END = "-- dsp: end of lemmas"
 
 
-class HelpersFileLayout:
-    """Lemmas in Tests.Helpers, proved one at a time in Tests.HelperGoal."""
-
-    def __init__(self, helpers_file: Path, helper_goal_file: Path) -> None:
-        self.helpers_file = helpers_file
-        self.helper_goal_file = helper_goal_file
-
-    def snapshot(self) -> str | None:
-        return save_file(self.helpers_file)
-
-    def restore(self, state: str | None) -> None:
-        restore_file(self.helpers_file, state)
-
-    def text(self) -> str:
-        return self.helpers_file.read_text() if self.helpers_file.exists() else ""
-
-    def has_postulates(self) -> bool:
-        return "postulate" in self.text()
-
-    def postulate(self, lemmas: list[ProofObligation], before: str) -> None:
-        append_postulates(self.helpers_file, lemmas)
-
-    def add_proved(self, declaration: str) -> None:
-        append_helper_declaration(helpers_file=self.helpers_file, declaration=declaration)
-
-    def install(self, source: str, target: str, sketch: str) -> str:
-        """The target file with `sketch` in place of `target`'s declaration."""
-        return replace_top_level_decl(
-            source=ensure_import(source, HELPERS_IMPORT), name=target, replacement=sketch
-        )
-
-    def render(self, source: str) -> str:
-        return source  # the lemmas live in another file
-
-    def lemma_goal(self, obligation: ProofObligation, working_source: str) -> Path:
-        write_helper_goal_file(helper_goal_file=self.helper_goal_file, obligation=obligation)
-        return self.helper_goal_file
-
-    def declaration_of(self, source: str, name: str) -> str:
-        lines = source.splitlines()
-        start = next((i for i, line in enumerate(lines) if line.startswith(f"{name} :")), None)
-
-        if start is None:
-            raise ValueError(f"Could not find declaration of {name} in the proved file.")
-
-        end = len(lines)
-        for index in range(start + 1, len(lines)):
-            line = lines[index]
-            if line and not line.startswith((" ", "\t", "--")) and " : " in line:
-                end = index
-                break
-
-        return "\n".join(lines[start:end]).strip()
-
-    def lemma_at_error(self, message: str, lemmas: list[ProofObligation]) -> str | None:
-        """The postulated lemma an Agda error points at, if it is in the helpers."""
-
-        lines = self.text().splitlines()
-        names = {l.name for l in lemmas}
-
-        # Agda may report several errors; any of them can be the lemma's.
-        for where in re.finditer(rf"{re.escape(self.helpers_file.name)}:(\d+)[.,]\d+", message):
-            row = int(where.group(1))
-            if 0 < row <= len(lines):
-                head = lines[row - 1].strip().split(" : ", 1)[0]
-                if head in names:
-                    return head
-        return None
-
-
-class InFileLayout:
+class Layout:
     """
     Lemmas inside the theorem's own file, in a region just above the
     declaration being proved. The file is kept to what the proof can see: it
@@ -173,17 +84,18 @@ class InFileLayout:
 
     # -- text --------------------------------------------------------------
 
-    def install(self, source: str, target: str, sketch: str) -> str:
+    def install(self, sketch: str) -> str:
+        """The file with `sketch` as the declaration being proved."""
         return self._compose(sketch)
 
     def render(self, source: str) -> str:
         return self._compose(self._declaration_part(source))
 
-    def lemma_goal(self, obligation: ProofObligation, working_source: str) -> Path:
+    def lemma_goal(self, obligation: ProofObligation) -> None:
+        """Make the lemma the declaration being proved, its proof one hole."""
         self.agda_file.write_text(self._compose(
             f"{obligation.name} : {obligation.signature}\n{obligation.name} = {{!!}}"
         ))
-        return self.agda_file
 
     def declaration_of(self, source: str, name: str) -> str:
         sig_start, _, end, column = declaration_span(source, name)
@@ -236,6 +148,4 @@ def _dedent(text: str, column: int) -> str:
         for line in text.splitlines(keepends=True)
     )
 
-
-Layout = HelpersFileLayout | InFileLayout
 

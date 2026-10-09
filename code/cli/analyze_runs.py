@@ -226,7 +226,7 @@ def print_llm_calls(run_dir: Path, full: bool) -> None:
 
 def print_events(run_dir: Path) -> None:
     skip = {"prompt", "text", "thinking", "source", "raw", "trial_source", "final_source",
-            "helpers_source", "extra", "sketch", "context", "gaps", "steps",
+            "lemmas_source", "helpers_source", "extra", "sketch", "context", "gaps", "steps",
             "decomposition", "comparison"}
 
     for event in read_events(run_dir):

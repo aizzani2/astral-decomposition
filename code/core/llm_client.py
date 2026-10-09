@@ -8,7 +8,7 @@ Three model-facing operations, in the order the paper uses them:
     fill_gap               one goal type + context       -> one Agda term
 
 Everything is transport-agnostic: `LLMBackend` is a one-method protocol, so
-swapping Ollama for Claude or a hosted autoformalizer is a constructor
+swapping Ollama for Claude is a constructor
 argument, not a rewrite. Every call goes through `ProofLLM._generate`, which
 is the single place model I/O is logged.
 """
@@ -27,8 +27,6 @@ from core.proof_state import (
     ContextEntry,
     InformalProof,
     InformalStep,
-    LLMDeclResult,
-    LLMHelperDeclResult,
     ProofObligation,
 )
 from core.run_log import run_logger
@@ -76,9 +74,6 @@ class OllamaBackend:
     think: bool | None = config.OLLAMA_THINK
     num_ctx: int = config.OLLAMA_NUM_CTX
     num_predict: int | None = None
-    # Send the prompt as is, without the model's chat template: for models
-    # trained on raw prompt/completion pairs (the autoformalize fine-tune).
-    raw: bool = False
     name: str = "ollama"
 
     def generate(
@@ -122,11 +117,8 @@ class OllamaBackend:
             "options": options,
         }
 
-        if think is not None and not self.raw:
+        if think is not None:
             body["think"] = think
-
-        if self.raw:
-            body["raw"] = True
 
         started = time.monotonic()
         response = requests.post(
@@ -356,11 +348,6 @@ class ProofLLM:
 
         return response.text
 
-    def complete(self, stage: str, prompt: str, stop: list[str] | None = None, **tags: Any) -> str:
-        """A plain completion, logged like every other call."""
-
-        return self._generate(stage, prompt, stop=stop, **tags)
-
     # -- stage 1: draft ----------------------------------------------------
 
     def draft_informal_proof(
@@ -435,8 +422,6 @@ class ProofLLM:
         informal: InformalProof,
         available_names: str = "",
         previous_errors: list[str] | None = None,
-        helpers_module: str = "Tests.Helpers",
-        context_module: str = "Tests.Context",
         attempt: int = 0,
     ) -> tuple[list[ProofObligation], str, str]:
         """
@@ -448,11 +433,9 @@ class ProofLLM:
             few_shot=prompts.SKETCH_FEW_SHOT,
             informal_proof=informal.as_numbered_text(),
             signature=signature.strip(),
-            available_names=available_names or "(none listed)",
+            available_names=available_names or "(none)",
             source=source,
             target_name=target_name,
-            helpers_module=helpers_module,
-            context_module=context_module,
             error_text=format_previous_errors(previous_errors or []),
         )
 
@@ -523,17 +506,14 @@ class ProofLLM:
         lemma_name: str,
         goal_type: str,
         context: list[ContextEntry],
-        context_module: str = "Tests.Context",
         informal_hint: str = "",
         available_names: str = "",
         target_name: str = "",
-        bound: set[str] | None = None,
     ) -> str:
         prompt = prompts.LEMMA_FROM_GAP_TEMPLATE.format(
             lemma_name=lemma_name,
             goal_type=goal_type.strip(),
             context="\n".join(f"  {e.name} : {e.type}" for e in context) or "  (empty)",
-            context_module=context_module,
             informal_hint=informal_hint.strip() or "(none recorded)",
             available_names=available_names or "(none listed)",
             target_name=target_name or "the current function",
@@ -564,117 +544,6 @@ class ProofLLM:
             raise ValueError("Model returned an empty lemma signature.")
 
         return signature
-
-    # -- legacy single-shot paths (kept so run_direct/run_single still work) --
-
-    def ask_for_direct_declaration(
-        self,
-        source: str,
-        target_name: str,
-        goal_type: str,
-        previous_errors: list[str],
-    ) -> str:
-        return self.ask_for_declaration(
-            source=source,
-            target_name=target_name,
-            goal_type=goal_type,
-            previous_errors=previous_errors,
-        ).declaration
-
-    def ask_for_declaration(
-        self,
-        source: str,
-        target_name: str,
-        goal_type: str,
-        previous_errors: list[str],
-    ) -> LLMDeclResult:
-        prompt = f"""\
-You are an Agda proof assistant agent. Complete this declaration: {target_name}
-
-Return the full replacement declaration inside <AGDA_DECL> tags, including the
-original type signature and all implementation clauses.
-
-Rules:
-- The first line inside <AGDA_DECL> must start with exactly: {target_name} :
-- Keep the type signature exactly as it is. Do not change the theorem.
-- Change only the implementation clauses. You may split into pattern matches.
-- Use `suc n`, never `S n`.
-- Do not return helper lemmas, do not add imports, do not touch other declarations.
-
-Current Agda file:
-
-{source}
-
-Agda reported this goal:
-
-{goal_type}
-{format_previous_errors(previous_errors)}
-Explain briefly, then give the replacement declaration.
-"""
-
-        full_response = self._generate("direct", prompt).strip()
-
-        return LLMDeclResult(
-            declaration=extract_agda_declaration(full_response),
-            full_response=full_response,
-        )
-
-    def ask_for_helpers_and_declaration(
-        self,
-        source: str,
-        target_name: str,
-        goal_type: str,
-        previous_errors: list[str],
-    ) -> LLMHelperDeclResult:
-        prompt = f"""\
-You are an Agda decomposition agent.
-
-Propose helper lemma signatures, then prove {target_name} using them.
-
-<AGDA_HELPERS> holds signatures only: no proofs, no `postulate` keyword, no
-names that already exist. Helpers land in Tests.Helpers, which imports
-Tests.Context, so they may not mention names local to the target file.
-
-<AGDA_DECL> holds the full replacement declaration. Its first line must start
-with exactly: {target_name} :
-Keep the type signature. Change only the clauses. Use `suc n`, never `S n`.
-
-Output format:
-
-<AGDA_HELPERS>
-helperLemma1 : ...
-</AGDA_HELPERS>
-
-<AGDA_DECL>
-{target_name} : original_type_here
-{target_name} ... = ...
-</AGDA_DECL>
-
-Current Agda file:
-
-{source}
-
-Hard goal type:
-
-{goal_type}
-{format_previous_errors(previous_errors)}
-Explain briefly, then give both blocks.
-"""
-
-        full_response = self._generate("decompose", prompt).strip()
-
-        return LLMHelperDeclResult(
-            helpers=extract_agda_helpers(full_response),
-            declaration=extract_agda_declaration(full_response),
-            full_response=full_response,
-        )
-
-
-# Backwards-compatible alias: proof_direct/proof_decompose construct
-# OllamaClient(model=...).
-class OllamaClient(ProofLLM):
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Parsing
@@ -807,29 +676,6 @@ def parse_lemma_signatures(
 
 def _is_valid_agda_name(name: str) -> bool:
     return bool(name) and all(char not in name for char in " \t(){}@.;")
-
-
-def extract_agda_declaration(text: str) -> str:
-    tagged = extract_between_tags(text, "AGDA_DECL")
-
-    if tagged is not None:
-        return tagged.strip()
-
-    cleaned = strip_markdown_code_fences(text).strip()
-
-    if not cleaned:
-        raise ValueError("Could not extract Agda declaration from empty response.")
-
-    return cleaned
-
-
-def extract_agda_helpers(text: str) -> str:
-    tagged = extract_between_tags(text, "AGDA_HELPERS")
-
-    if tagged is None:
-        raise ValueError("Could not find <AGDA_HELPERS>...</AGDA_HELPERS> block.")
-
-    return tagged.strip()
 
 
 def extract_between_tags(text: str, tag: str) -> str | None:

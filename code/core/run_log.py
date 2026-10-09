@@ -47,7 +47,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from core.config import AGDA_BIN
 
 
 def _jsonable(value: Any) -> Any:
@@ -91,7 +90,7 @@ def _git_dirty(root: Path) -> bool | None:
 
 def _agda_version() -> str | None:
     try:
-        out = subprocess.run([AGDA_BIN, "--version"], capture_output=True, text=True, timeout=5)
+        out = subprocess.run(["agda", "--version"], capture_output=True, text=True, timeout=5)
         return out.stdout.strip() or None
     except Exception:
         return None

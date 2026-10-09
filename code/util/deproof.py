@@ -42,9 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core import config
 from core.agda_client import AgdaSession
-from core.config import AGDA_IMPORT_PATH
 from core.proof_files import preserved_file
 from util.checkout import mirrored
 from util.agda_source import (
@@ -390,7 +388,7 @@ def used_names(
 def decompose(
     agda_file: Path,
     name: str,
-    import_path: str = AGDA_IMPORT_PATH,
+    import_path: str | None = None,
     source: str | None = None,
     congruences: tuple[str, ...] = DEFAULT_CONGRUENCES,
     declared: list[str] | tuple[str, ...] = (),
@@ -855,9 +853,6 @@ def main(argv: list[str] | None = None) -> int:
                              "mirror of it, so the checkout is never written to.")
     parser.add_argument("--include", default="src",
                         help="With --checkout: the include directory, relative to ROOT.")
-    parser.add_argument("--import-path", default=AGDA_IMPORT_PATH,
-                        help="Without --checkout: Agda's include path.")
-    parser.add_argument("--agda-bin", default=None, help="Agda binary (default: $AGDA_BIN or agda).")
     parser.add_argument("--compare", metavar="OTHER_FILE",
                         help="Another file proving the same declaration name.")
     parser.add_argument("--congruence", action="append", default=[],
@@ -869,25 +864,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", help="With --sketch: also write the whole sketched file here.")
     args = parser.parse_args(argv)
 
-    if args.agda_bin:
-        config.AGDA_BIN = args.agda_bin
-
     congruences = DEFAULT_CONGRUENCES + tuple(args.congruence)
 
     if args.checkout:
-        # A checkout says what it needs in its own .agda-lib; the user's
-        # default libraries are for whatever Agda installed them.
-        if "--no-default-libraries" not in config.AGDA_FLAGS:
-            config.AGDA_FLAGS = [*config.AGDA_FLAGS, "--no-default-libraries"]
-
         with mirrored(Path(args.checkout), args.file) as tree:
             return _run(args, tree / args.file, str(tree / args.include), congruences)
 
-    return _run(args, Path(args.file).resolve(), args.import_path, congruences)
+    return _run(args, Path(args.file).resolve(), None, congruences)
 
 
 def _run(
-    args: argparse.Namespace, agda_file: Path, import_path: str, congruences: tuple[str, ...]
+    args: argparse.Namespace, agda_file: Path, import_path: str | None, congruences: tuple[str, ...]
 ) -> int:
     first = decompose(agda_file, args.name, import_path, congruences=congruences, line=args.line)
     print(first.render())

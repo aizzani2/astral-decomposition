@@ -6,7 +6,6 @@ JSON line per declaration.
     python cli/deproof_dataset.py \\
         --informal ~/agda/data/hf/agda-informalize-stdlib/data/train-00000-of-00001.parquet \\
         --decls    ~/agda/data/hf/agda-decls/data/train-00000-of-00001.parquet \\
-        --agda-bin ~/agda/tools/agda-2.8.0/agda \\
         --path src/Data/Nat/Properties.agda --limit 20 --out deproof-nat.jsonl
 
 Each line holds the dataset row (informal statement and proof, signature,
@@ -28,7 +27,6 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from core import config
 from core.config import CHECKOUTS_ROOT
 from util.agda_data import DatasetDecl, checkout_for, join_informal, load_rows
 from util.checkout import mirrored
@@ -43,7 +41,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, help="JSONL output; appended to, resumable.")
     parser.add_argument("--checkouts", default=str(CHECKOUTS_ROOT),
                         help="Directory holding one checkout per source repo.")
-    parser.add_argument("--agda-bin", default=None, help="Agda binary (default: $AGDA_BIN or agda).")
     parser.add_argument("--kinds", default="lemma,theorem",
                         help="Informal kinds to keep (comma-separated); '' keeps all.")
     parser.add_argument("--path", action="append", default=[],
@@ -90,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         by_file.setdefault((d.repo, d.commit, d.path), []).append(d)
 
     jobs = [
-        (decls_in_file, args.checkouts, args.agda_bin, granularities)
+        (decls_in_file, args.checkouts, granularities)
         for decls_in_file in by_file.values()
     ]
 
@@ -113,17 +110,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_file(
-    decls: list[DatasetDecl], checkouts: str, agda_bin: str | None, granularities: list[str]
+    decls: list[DatasetDecl], checkouts: str, granularities: list[str]
 ) -> list[dict]:
     """Every declaration of one file, in one mirror of its checkout."""
-
-    if agda_bin:
-        config.AGDA_BIN = agda_bin
-
-    # A checkout says what it needs in its own .agda-lib; the user's default
-    # libraries are for whatever Agda installed them.
-    if "--no-default-libraries" not in config.AGDA_FLAGS:
-        config.AGDA_FLAGS = [*config.AGDA_FLAGS, "--no-default-libraries"]
 
     first = decls[0]
     records: list[dict] = []

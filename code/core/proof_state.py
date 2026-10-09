@@ -72,10 +72,6 @@ class SketchCheckResult:
     goals: list[AgdaGoal] = field(default_factory=list)
     message: str = ""
 
-    @property
-    def structurally_valid(self) -> bool:
-        return self.kind in ("holes", "complete")
-
 
 # ---------------------------------------------------------------------------
 # Informal layer (the "Draft" stage)
@@ -132,15 +128,6 @@ class ProofObligation:
 
 
 @dataclass
-class ProposedHelper:
-    """A helper proposed by the model during decomposition."""
-
-    name: str
-    signature: str
-    informal_hint: str = ""
-
-
-@dataclass
 class SketchGap:
     """
     One open conjecture in a formal sketch: a hole plus everything we know
@@ -155,9 +142,6 @@ class SketchGap:
     goal_type: str = ""
     context: list[ContextEntry] = field(default_factory=list)
     informal_hint: str = ""
-
-    def context_text(self) -> str:
-        return "\n".join(f"  {entry.name} : {entry.type}" for entry in self.context)
 
 
 @dataclass
@@ -198,47 +182,6 @@ class GapResult:
 
 
 @dataclass
-class DirectProofResult:
-    success: bool
-    target_name: str
-    declaration: str | None = None
-    output: str = ""
-
-
-@dataclass
-class DecompositionResult:
-    """
-    success=True means the target typechecks *assuming* the listed obligations.
-    It does NOT mean the obligations have been proved.
-    """
-
-    success: bool
-    target_name: str
-    target_declaration: str | None = None
-    obligations: list[ProofObligation] = field(default_factory=list)
-    output: str = ""
-
-
-@dataclass
-class SingleProofResult:
-    success: bool
-    target_name: str
-    declaration: str | None = None
-    obligations: list[ProofObligation] = field(default_factory=list)
-    output: str = ""
-
-
-@dataclass
-class RecursiveProofResult:
-    success: bool
-    target_name: str
-    declaration: str | None = None
-    obligations: list[ProofObligation] = field(default_factory=list)
-    helper_results: list[RecursiveProofResult] = field(default_factory=list)
-    output: str = ""
-
-
-@dataclass
 class DSPResult:
     """
     Result of the full draft -> sketch -> prove pipeline for one target.
@@ -265,21 +208,3 @@ class DSPResult:
     def gaps_closed(self) -> tuple[int, int]:
         closed = sum(1 for r in self.gap_results if r.success)
         return closed, len(self.gap_results)
-
-
-# ---------------------------------------------------------------------------
-# LLM parse results
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class LLMDeclResult:
-    declaration: str
-    full_response: str = ""
-
-
-@dataclass
-class LLMHelperDeclResult:
-    helpers: str
-    declaration: str
-    full_response: str = ""

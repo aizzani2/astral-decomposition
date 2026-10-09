@@ -10,7 +10,6 @@ exist in the text).
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 
 from core.proof_state import SketchGap
@@ -82,7 +81,29 @@ def replace_hole(source: str, hole_index: int, replacement: str) -> str:
 
     start, end = spans[hole_index]
 
-    return source[:start] + replacement.strip() + source[end:]
+    return source[:start] + _as_argument(replacement.strip()) + source[end:]
+
+
+def _as_argument(term: str) -> str:
+    """
+    `term` parenthesised unless it is one token or already one group: a hole
+    inside an application (`sym {!!}`) must take the whole term, as Agda's
+    give does, not just its head.
+    """
+
+    if not re.search(r"\s", term):
+        return term
+
+    if term.startswith("("):
+        depth = 0
+        for index, char in enumerate(term):
+            depth += {"(": 1, ")": -1}.get(char, 0)
+            if depth == 0:
+                if index == len(term) - 1:
+                    return term
+                break
+
+    return f"({term})"
 
 
 def comment_before_hole(source: str, hole_index: int) -> str:
@@ -169,15 +190,6 @@ def build_gaps(source: str, goals: list) -> list[SketchGap]:
     return gaps
 
 
-def strip_comments(source: str) -> str:
-    """Drop line comments; used when checking a sketch for leftover markers."""
-
-    return "\n".join(
-        line.split("--")[0] if line.strip().startswith("--") else line
-        for line in source.splitlines()
-    )
-
-
 def available_names(*sources: str) -> str:
     """
     Collect top-level declaration names from Agda sources, to tell the model
@@ -237,23 +249,6 @@ def available_signatures(*sources: str) -> str:
                 out.append(f"{match.group(1)} : {match.group(2)}")
 
     return "\n".join(out)
-
-
-def context_signatures(agda_root: Path, exclude: frozenset[str] = frozenset()) -> str:
-    """
-    Signatures from every module in the Agda tree.
-
-    `trans`/`sym`/`cong` are defined in Tests.Util and only re-exported by
-    Tests.Context, so reading Context.agda alone finds nothing.
-    """
-
-    sources = [
-        path.read_text()
-        for path in sorted((agda_root / "Tests").glob("*.agda"))
-        if path.stem not in exclude
-    ]
-
-    return available_signatures(*sources)
 
 
 def hint_names(*sources: str, exclude: frozenset[str] = frozenset()) -> list[str]:

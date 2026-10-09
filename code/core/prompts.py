@@ -201,8 +201,8 @@ Informal proof (each line is one step you should mirror in the sketch):
 Target signature (copy this line verbatim as the first line of the sketch):
 {signature}
 
-Names already available from the imports (name : type), which the sketch and
-lemmas may use:
+Lemmas already proved or stated above {target_name} (name : type), which the
+sketch and lemmas may use besides everything in scope in the file:
 {available_names}
 
 Current file (for context; you are replacing only {target_name}):
@@ -212,8 +212,8 @@ Rules for <AGDA_LEMMAS>:
 - One type signature per line, no implementations, no `postulate` keyword.
 - Lemma names must be new: do not reuse any name listed as available.
 - Only for steps marked as lemmas, or steps that need their own induction.
-- These are placed in {helpers_module}, which imports {context_module} only.
-  So they may not mention names declared in the target file.
+- They are postulated just above {target_name}, in the same module, so they
+  may use any name in scope there (the file's imports and earlier declarations).
 - Emit an empty block if the sketch needs no lemmas.
 
 Rules for <AGDA_SKETCH>:
@@ -311,7 +311,7 @@ Write a single top-level Agda type signature named {lemma_name} that:
   (e.g. how `+` behaves on `suc` or `zero` in the second argument);
 - does NOT merely restate the goal, and does not mention {target_name};
 - quantifies explicitly over the variables it needs, e.g. (m n : Nat) → ...;
-- uses only names available from {context_module};
+- uses only names in scope where {target_name} is defined;
 - is written on one line, with ≡ and →, no markdown, no explanation.
 
 <AGDA_SIG>

@@ -1,7 +1,13 @@
 """Text-level parsing: holes, declarations, clauses, chains, signatures. No Agda."""
 
-from core.proof_context import find_enclosing_top_level_decl_name, get_signature_line
-from util.agda_source import declaration_span, parse_chain, parse_clauses, split_equation
+from core.agda_client import parse_auto_listing
+from util.agda_source import (
+    declaration_span,
+    get_signature_line,
+    parse_chain,
+    parse_clauses,
+    split_equation,
+)
 from util.sketch_ops import count_holes, mask_comments, replace_hole
 
 
@@ -22,6 +28,9 @@ def test_literate_prose_is_not_code():
 
 def test_replace_hole_by_index():
     assert replace_hole("a = {!!}\nb = ?", 1, "refl") == "a = {!!}\nb = refl"
+    assert replace_hole("a = sym {!!}", 0, "lem n eq") == "a = sym (lem n eq)"
+    assert replace_hole("a = {!!}", 0, "(f x) (g y)") == "a = ((f x) (g y))"
+    assert replace_hole("a = {!!}", 0, "(f x)") == "a = (f x)"
 
 
 NESTED = """module M where
@@ -37,12 +46,6 @@ module _ {a} where
 bar : Nat
 bar = {!!}
 """
-
-
-def test_target_of_a_hole_skips_where_locals_and_module_headers():
-    assert [find_enclosing_top_level_decl_name(NESTED, n) for n in (5, 8, 10, 12)] == [
-        "foo", "foo", "baz", "bar",
-    ]
 
 
 def test_signature_line_joins_continuations():
@@ -97,3 +100,8 @@ def test_not_a_chain():
 
 def test_split_equation_at_top_level():
     assert split_equation("f (a ≡ b) ≡ c") == ("f (a ≡ b)", "c")
+
+
+def test_mimer_listing():
+    text = "Solutions:\n  0. trans (p x)\n       (q y)\n  1. refl\n"
+    assert parse_auto_listing(text) == ["trans (p x) (q y)", "refl"]
