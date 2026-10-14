@@ -12,7 +12,7 @@ from proof.holes import (
     split_declaration,
 )
 from proof.layout import REGION_END, REGION_START, Layout
-from deproof.comparison import compare
+from deproof.comparison import compare, match_statements
 from deproof.decomposition import ClauseDecomposition, Decomposition, ProofStep
 
 
@@ -63,6 +63,7 @@ def test_layout_composes_and_blames(tmp_path: Path):
     text = f.read_text()
 
     assert "--safe" not in text                      # postulates must be allowed
+    assert "--safe" in layout.checked(text)          # ...but not in the final check
     assert "after" not in text                       # cut after the theorem
     assert text.rstrip().endswith("thm = {!!}")
 
@@ -110,3 +111,9 @@ def test_degenerate_promotion_sees_through_implicit_binders():
     assert _is_degenerate("{X : List Obj} → {f : Sublist X Y} → trans f (refl id) ≈ᵗ f", goal)
     assert _is_degenerate("(n : Nat) → {m : Nat} → trans f (refl id) ≈ᵗ f", goal)
     assert not _is_degenerate("(n : Nat) → n ≡ n", goal)
+
+
+def test_match_statements_up_to_binders_and_symmetry():
+    found = {"mine": "(a b : Nat) → a + b ≡ b + a", "other": "(n : Nat) → n ≡ n"}
+    wanted = {"+-comm": "(m n : Nat) → m + n ≡ n + m", "+-flip": "(x y : Nat) → y + x ≡ x + y"}
+    assert sorted(match_statements(found, wanted)) == [("mine", "+-comm", "same"), ("mine", "+-flip", "symmetric")]

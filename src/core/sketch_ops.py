@@ -163,6 +163,23 @@ def excerpt_around_hole(source: str, hole_index: int, context_lines: int = 6) ->
     return "\n".join(lines[lo:hi])
 
 
+def scope_lines(source: str, limit: int = 80) -> str:
+    """
+    The lines that decide what is in scope: the module header, imports and
+    opens (including `where open ...`), in file order, each once.
+    """
+
+    pattern = re.compile(r"^\s*(?:module\s|(?:open\s+)?import\s|open\s|where\s+open\s)")
+    seen: dict[str, None] = {}
+
+    for line in mask_comments(source).splitlines():
+        if pattern.match(line):
+            seen.setdefault(" ".join(line.split()), None)
+
+    lines = list(seen)
+    return "\n".join(lines[:limit] + (["..."] if len(lines) > limit else []))
+
+
 def build_gaps(source: str, goals: list) -> list[SketchGap]:
     """
     Zip the holes in the text with the goals Agda reported.

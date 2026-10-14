@@ -1,0 +1,32 @@
+{
+  "run_id": "04-up-to-iso",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T22:22:51.608322+00:00",
+  "finished_at": "2026-10-14T22:23:34.343618+00:00",
+  "elapsed_s": 42.735,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 2,
+    "agda_check": 2,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 10513,
+    "output_tokens": 5306
+  },
+  "result": null,
+  "success": null,
+  "target": "up-to-iso",
+  "error": null,
+  "llm_calls": 2
+}

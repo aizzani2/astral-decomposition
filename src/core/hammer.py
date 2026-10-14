@@ -31,7 +31,7 @@ from core.llm_client import ProofLLM
 from core.proof_state import GapResult, SketchGap
 from core.run_log import run_logger
 from core.agda_source import WORD_RE
-from core.sketch_ops import count_holes, excerpt_around_hole, replace_hole
+from core.sketch_ops import count_holes, excerpt_around_hole, replace_hole, scope_lines
 
 
 # Cheap first-pass candidates. Deliberately small: each one costs a full Agda
@@ -212,6 +212,7 @@ def close_gap(
                     context=gap.context,
                     informal_hint=gap.informal_hint,
                     excerpt=excerpt_around_hole(source, gap.hole_index),
+                    scope=scope_lines(source),
                     available_names=available_names,
                     previous_errors=previous,
                     target_name=target_name,

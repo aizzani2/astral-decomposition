@@ -153,6 +153,32 @@ def compare(
     return out
 
 
+def match_statements(found: dict[str, str], wanted: dict[str, str]) -> list[tuple[str, str, str]]:
+    """
+    (found name, wanted name, "same" | "symmetric") for each statement in
+    `wanted` that one in `found` states, up to binder names; both in Agda's
+    normal form. Used to tell whether a run recovered lemmas it was not shown.
+    """
+
+    by_statement: dict[str, str] = {}
+    for name, type_ in found.items():
+        if type_:
+            by_statement.setdefault(_canonical_statement(type_), name)
+
+    pairs = []
+    for name, type_ in wanted.items():
+        if not type_:
+            continue
+        same = by_statement.get(_canonical_statement(type_))
+        flipped = by_statement.get(_canonical_statement(_flip_equation(type_)))
+        if same is not None:
+            pairs.append((same, name, "same"))
+        elif flipped is not None:
+            pairs.append((flipped, name, "symmetric"))
+
+    return pairs
+
+
 def _flip_equation(type_: str) -> str:
     """`Γ → l ≡ r` -> `Γ → r ≡ l`; anything else is returned unchanged."""
 

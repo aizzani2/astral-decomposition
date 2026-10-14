@@ -1,0 +1,32 @@
+{
+  "run_id": "05-tabulate",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:47:48.794591+00:00",
+  "finished_at": "2026-10-14T19:48:50.427149+00:00",
+  "elapsed_s": 61.632,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 3,
+    "agda_check": 4,
+    "sketch_attempt": 2,
+    "decomposition": 2,
+    "prove_start": 1,
+    "gap_start": 3,
+    "gap_candidate": 6,
+    "mimer": 3,
+    "gap_result": 3,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 33362,
+    "output_tokens": 6840
+  },
+  "result": null,
+  "success": null,
+  "target": "tabulate⁻",
+  "error": null,
+  "llm_calls": 3
+}

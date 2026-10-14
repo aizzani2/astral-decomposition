@@ -238,3 +238,86 @@ def test_continuation_format_sees_the_file_and_continues(project: Path):
     assert "open import Base" in prompt
     assert prompt.endswith("flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\n")
     assert result.success, result.output
+
+
+@needs_agda
+def test_proof_hiding_a_postulate_is_rejected(project: Path):
+    """The fixture has no --safe, so Agda accepts this; the final check must not."""
+
+    target = write_target(project, "flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\nflipEq n m eq = {!!}")
+    llm = ProofLLM(sketch_format="definition", backend=EchoBackend(responses=[
+        "flipEq n m eq = cheat\n  where\n  postulate cheat : m ≡ suc n\n",
+    ]))
+
+    result = prove_dsp(
+        target, "flipEq", llm=llm, draft=False, sketch_max_attempts=1,
+        hammer=HammerConfig(tactics=(), use_mimer=False, llm_attempts=0),
+        history=ProofHistory(), verbose=False, place_holes=True, state_lemmas=True,
+    )
+
+    assert not result.success
+    assert result.stage == "final_check" and "postulate" in result.output
+
+
+@needs_agda
+def test_planner_states_lemmas_and_the_prover_uses_them(project: Path):
+    """
+    A chat planner states a lemma; the continuation prover sees it postulated
+    just above the theorem, uses it, and then proves it one level down.
+    """
+
+    target = write_target(project, "flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\nflipEq n m eq = {!!}")
+    planner = ProofLLM(backend=EchoBackend(responses=[
+        "symNat : (a b : Nat) → a ≡ b → b ≡ a\n</AGDA_LEMMAS>\n<AGDA_SKETCH>\n"
+        "flipEq : (n m : Nat) → suc n ≡ m → m ≡ suc n\nflipEq n m eq = {!!}\n",     # the theorem's plan
+        "</AGDA_LEMMAS>\n<AGDA_SKETCH>\nsymNat : (a b : Nat) → a ≡ b → b ≡ a\nsymNat a b p = {!!}\n",
+    ]))
+    prover = ProofLLM(sketch_format="continuation", planner=planner, backend=EchoBackend(responses=[
+        "flipEq n m eq = symNat (suc n) m eq\n",     # uses the planner's lemma
+        "symNat a b p = sym p\n",                    # proves it
+    ]))
+
+    result = prove_dsp(
+        target, "flipEq", llm=prover, draft=False, sketch_max_attempts=1,
+        hammer=HammerConfig(tactics=(), use_mimer=False, llm_attempts=0),
+        history=ProofHistory(), verbose=False, place_holes=True, state_lemmas=True,
+    )
+
+    assert "postulate\n  symNat : (a b : Nat) → a ≡ b → b ≡ a" in prover.backend.calls[0]
+    assert result.success, result.output
+    assert [r.target_name for r in result.lemma_results] == ["symNat"]
+    assert result.lemma_results[0].success
+
+
+CHAIN = """
+plusZero : (n : Nat) → n + 0 ≡ n
+plusZero zero = refl
+plusZero (suc n) = congSuc (plusZero n)
+
+plusZeroTwice : (n : Nat) → (n + 0) + 0 ≡ n
+plusZeroTwice n = trans (plusZero (n + 0)) (plusZero n)
+
+thm : (n : Nat) → ((n + 0) + 0) + 0 ≡ n
+thm n = trans (plusZero ((n + 0) + 0)) (plusZeroTwice n)
+"""
+
+
+@needs_agda
+def test_lemma_tree_and_hiding_a_level(project: Path):
+    from deproof.tree import lemma_tree
+    from proof.layout import Layout
+
+    f = write_target(project, CHAIN)
+    nodes = lemma_tree(f, "thm", max_depth=2)
+
+    assert {n: v.depth for n, v in nodes.items()} == {"thm": 0, "plusZero": 1, "plusZeroTwice": 1}
+    assert nodes["plusZeroTwice"].children == ["plusZero"]
+
+    # hide the direct lemmas: what is left loads, with the theorem as a hole
+    source = f.read_text()
+    lines = source.splitlines()
+    first = lines.index("plusZero : (n : Nat) → n + 0 ≡ n") + 1
+    last = lines.index("plusZeroTwice n = trans (plusZero (n + 0)) (plusZero n)") + 1
+    Layout(f, "thm", None, [(first, last)])
+    assert "plusZero" not in f.read_text().split("thm :")[0]
+    assert check_sketch(f, with_context=False).kind == "holes"

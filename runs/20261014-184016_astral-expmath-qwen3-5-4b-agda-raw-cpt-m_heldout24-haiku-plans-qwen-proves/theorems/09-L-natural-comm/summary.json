@@ -1,0 +1,34 @@
+{
+  "run_id": "09-L-natural-comm",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T19:01:48.467169+00:00",
+  "finished_at": "2026-10-14T19:11:04.763050+00:00",
+  "elapsed_s": 556.295,
+  "event_counts": {
+    "llm_call": 11,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 20,
+    "sketch_repair": 3,
+    "decomposition": 1,
+    "sketch_attempt": 3,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 4,
+    "mimer": 1,
+    "gap_result": 1,
+    "promote": 1,
+    "dsp_result": 2
+  },
+  "token_totals": {
+    "prompt_tokens": 45228,
+    "output_tokens": 122395
+  },
+  "result": null,
+  "success": null,
+  "target": "L-natural-comm",
+  "error": null,
+  "llm_calls": 11
+}

@@ -102,6 +102,9 @@ class Decomposition:
     clauses: list[ClauseDecomposition] = field(default_factory=list)
     lemmas: dict[str, str] = field(default_factory=dict)        # name -> type as declared
     lemma_normal: dict[str, str] = field(default_factory=dict)  # name -> normalised type
+    # Where a name comes from, as Agda says: {"what": "defined name" |
+    # "constructor" | "record field" | ..., "path": file, "line": 1-based}.
+    sources: dict[str, dict] = field(default_factory=dict)
 
     @property
     def n_steps(self) -> int:

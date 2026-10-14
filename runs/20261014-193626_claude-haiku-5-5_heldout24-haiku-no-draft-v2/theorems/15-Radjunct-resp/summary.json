@@ -1,0 +1,33 @@
+{
+  "run_id": "15-Radjunct-resp",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T20:02:15.138237+00:00",
+  "finished_at": "2026-10-14T20:02:47.143970+00:00",
+  "elapsed_s": 32.005,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 1,
+    "agda_check": 3,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 6456,
+    "output_tokens": 675
+  },
+  "result": null,
+  "success": null,
+  "target": "Radjunct-resp-≈",
+  "error": null,
+  "llm_calls": 1
+}

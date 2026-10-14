@@ -1,0 +1,37 @@
+{
+  "run_id": "11-merge₂ˡ",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:08:33.478824+00:00",
+  "finished_at": "2026-10-14T19:11:05.212800+00:00",
+  "elapsed_s": 151.734,
+  "event_counts": {
+    "llm_call": 7,
+    "draft": 3,
+    "drafts_ready": 2,
+    "agda_check": 6,
+    "sketch_repair": 2,
+    "decomposition": 4,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 2,
+    "gap_candidate": 5,
+    "mimer": 2,
+    "gap_result": 2,
+    "lemma_start": 1,
+    "lemma_unused": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 40725,
+    "output_tokens": 26826
+  },
+  "result": null,
+  "success": null,
+  "target": "merge₂ˡ",
+  "error": null,
+  "llm_calls": 7
+}

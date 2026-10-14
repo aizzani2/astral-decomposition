@@ -34,6 +34,7 @@ congruence names are seen through.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from core.agda_client import AgdaSession
@@ -197,7 +198,7 @@ def step_head(term: Term, congruences: tuple[str, ...] = DEFAULT_CONGRUENCES) ->
     while isinstance(term, list):
         head = term[0]
 
-        if head in STRUCTURAL or head in congruences:
+        if isinstance(head, str) and (head in STRUCTURAL or head in congruences):
             term = term[-1]
             continue
 
@@ -258,6 +259,7 @@ def decompose(
     declared: list[str] | tuple[str, ...] = (),
     line: int | None = None,
     timeout: int = DEPROOF_TIMEOUT_SECONDS,
+    extra_names: list[str] | tuple[str, ...] | set[str] = (),
 ) -> Decomposition:
     """
     Decompose the declaration `name` in `agda_file` (or in `source`, checked
@@ -267,7 +269,9 @@ def decompose(
     Works on sketches too: a clause that is still a hole is one open step.
     `declared` names lemmas to record even if no step uses them yet (a
     sketch's lemma signatures). `line` (1-based) picks the declaration when
-    the name is declared more than once in the file.
+    the name is declared more than once in the file. `extra_names` are
+    resolved too (`sources`: what each is and where it is defined), along
+    with every lemma the steps use.
     """
 
     original = agda_file.read_text()
@@ -364,6 +368,18 @@ def decompose(
                 result.lemma_normal[lemma] = _infer_or(
                     session, any_goal, lemma, result.lemmas[lemma], "Normalised"
                 )
+
+            if any_goal is not None:
+                for lemma in dict.fromkeys([*result.lemmas, *extra_names]):
+                    source = where_defined(session, any_goal, lemma)
+                    if source is None:
+                        continue
+                    if source["what"] == "defined name":
+                        source["type"] = result.lemmas.get(lemma) or _infer_or(session, any_goal, lemma, "", "AsIs")
+                        source["normal"] = result.lemma_normal.get(lemma) or _infer_or(
+                            session, any_goal, lemma, "", "Normalised"
+                        )
+                    result.sources[lemma] = source
 
     for clause_entry in result.clauses:
         for step in clause_entry.steps:
@@ -471,6 +487,63 @@ def _pattern_variables(
     hidden = [entry.name for entry in context if not entry.in_scope]
 
     return [w for w in words if w in types and w not in hidden], types, hidden
+
+
+_SOURCE_RE = re.compile(r"its definition at (.+?):(\d+)[.,]\d+")
+_WHAT_RE = re.compile(
+    r"\* an? (defined name|constructor|record field|pattern synonym|module|"
+    r"generalizable variable|macro|primitive|postulate)\b"
+)
+
+
+def resolve_names(
+    agda_file: Path, names: list[str] | set[str], import_path: str | None = None,
+    timeout: int = DEPROOF_TIMEOUT_SECONDS,
+) -> dict[str, dict]:
+    """
+    `sources` for `names` at the file's top level, with the file as it is:
+    for a proof `decompose` cannot take apart (holes in its clauses leave
+    Agda with unsolved constraints).
+    """
+
+    sources: dict[str, dict] = {}
+
+    with AgdaSession(agda_file, import_path=import_path, timeout=timeout) as session:
+        load = session.load()
+        if load.kind == "error":
+            raise ValueError(f"{agda_file} did not load: {load.message}")
+
+        for name in names:
+            source = where_defined(session, None, name)
+            if source is None:
+                continue
+            if source["what"] == "defined name":
+                source["type"] = _infer_or(session, None, name, "", "AsIs")
+                source["normal"] = _infer_or(session, None, name, "", "Normalised")
+            sources[name] = source
+
+    return sources
+
+
+def where_defined(session: AgdaSession, goal_id: int | None, name: str) -> dict | None:
+    """What `name` is at a hole and where it is defined, or None if not in scope."""
+
+    try:
+        message = session.why_in_scope(goal_id, name)
+    except (ValueError, TimeoutError):
+        return None
+
+    where = _SOURCE_RE.search(message)
+    what = _WHAT_RE.search(message)
+
+    if where is None:
+        return None
+
+    return {
+        "what": what.group(1) if what else "",
+        "path": where.group(1),
+        "line": int(where.group(2)),
+    }
 
 
 def _is_constructor(session: AgdaSession, goal_id: int, name: str) -> bool:

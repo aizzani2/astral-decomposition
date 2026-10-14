@@ -258,7 +258,10 @@ The variables in scope at the hole are:
 The informal step this hole corresponds to:
 {informal_hint}
 
-Names available from the imports and the rest of the file:
+The file's module line, imports and opens (what is in scope at the hole):
+{scope}
+
+Names declared in the file and lemmas proved for this proof:
 {available_names}
 
 Surrounding code (the hole is marked HERE):
@@ -266,7 +269,10 @@ Surrounding code (the hole is marked HERE):
 {error_text}
 Rules:
 - The term must have exactly the goal type shown above.
-- Use only the variables listed in scope, plus the names listed above.
+- Use the variables in scope, the names above, and names exported by the
+  opened modules, unqualified as they are opened. A name the file has not
+  brought into scope is an error: if a library lemma is not opened, do not
+  use it.
 - `trans`, `sym`, and `cong` are functions and must be applied to arguments.
   Writing them bare is always a type error.
 - You are inside the definition of {target_name}. A recursive call to

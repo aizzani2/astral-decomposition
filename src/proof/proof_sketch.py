@@ -72,14 +72,21 @@ from core.sketch_ops import (
 NAME_RE = re.compile(r"[^\s(){};]+")
 
 
-def prove_dsp(agda_file: Path, name: str, line: int | None = None, **kwargs) -> DSPResult:
+def prove_dsp(
+    agda_file: Path,
+    name: str,
+    line: int | None = None,
+    hide: list[tuple[int, int]] | None = None,
+    **kwargs,
+) -> DSPResult:
     """
     Prove `name` in `agda_file`, a file of an Agda project: in practice a
     mirror of a library checkout (data/checkout.py), since the file is
     rewritten while the proof is built. It is cut after the theorem, whose
     proof becomes one hole, and lemmas go just above it (proof/layout.py).
-    `line` picks the declaration when the name occurs more than once. The
-    file is restored on the way out.
+    `line` picks the declaration when the name occurs more than once; `hide`
+    lists line ranges above it to remove first (lemmas the run must do
+    without). The file is restored on the way out.
 
     Options besides the budgets: `draft=False` writes the sketch from the
     statement alone; `place_holes` keeps a sketch that fails to check, with
@@ -88,7 +95,7 @@ def prove_dsp(agda_file: Path, name: str, line: int | None = None, **kwargs) -> 
     """
 
     with preserved_file(agda_file):
-        layout = Layout(agda_file, name, line)
+        layout = Layout(agda_file, name, line, hide)
         return _prove_dsp(agda_file, layout, target_name=name, **kwargs)
 
 
@@ -455,13 +462,17 @@ def _attempt_dsp(
         layout.add_proved(layout.declaration_of(lemma_result.final_source, obligation.name))
 
     # ----------------------------------------------------------- final check
+    # Checked with the file's own options, `--safe` included when it had it;
+    # a file without it is scanned for what --safe would have refused.
     working_source = layout.render(working_source)
-    agda_file.write_text(working_source)
+    agda_file.write_text(layout.checked(working_source))
     final = run_plain_agda(agda_file, import_path=hammer.import_path, timeout=hammer.agda_timeout)
+    agda_file.write_text(working_source)
 
     leftover_postulates = layout.has_postulates()
+    unsafe = layout.unsafe_constructs(working_source)
 
-    if not final.success or leftover_postulates:
+    if not final.success or leftover_postulates or unsafe:
         restore_file(agda_file, original_source)
         layout.restore(original_helpers)
 
@@ -469,6 +480,8 @@ def _attempt_dsp(
 
         if leftover_postulates:
             message += "\n\nSome lemmas are still postulated."
+        if unsafe:
+            message += f"\n\nThe proof uses what --safe forbids: {', '.join(unsafe)}."
 
         return fail(
             "final_check",
@@ -1070,9 +1083,13 @@ def _promote_gap_to_lemma(
 ) -> GapResult:
     """
     Last resort for a stuck hole: abstract it into a top-level lemma, postulate
-    the lemma, and apply it to the in-scope variables. The lemma then has to be
-    proved recursively, which is how the paper's "hard step becomes its own
-    lemma" idea shows up here.
+    the lemma, and use it in the hole (applied to the clause's variables, or
+    inside whatever Mimer builds around it). The lemma then has to be proved
+    recursively, which is how the paper's "hard step becomes its own lemma"
+    idea shows up here.
+
+    The model states the lemma first, unless `state_lemmas`; when its lemma
+    does not fit the hole, a lemma stating the hole's exact goal is tried.
     """
 
     log = run_logger()
@@ -1091,23 +1108,57 @@ def _promote_gap_to_lemma(
         except Exception:
             goal_type, context = gap.goal_type, gap.context
 
-    try:
-        if state_lemmas:
-            signature = goal_statement(
-                goal_type, context, _clause_variables(source, gap.hole_index, target_name)
-            )
-        else:
-            signature = llm.lemma_signature_for_gap(
-                lemma_name=lemma_name,
-                goal_type=goal_type,
-                context=context,
-                informal_hint=gap.informal_hint,
-                available_names=available_names,
-                target_name=target_name,
-            )
-    except (ValueError, RuntimeError) as error:
-        log.event("promote", hole_index=gap.hole_index, lemma=lemma_name, ok=False, error=str(error))
-        return GapResult(success=False, gap=gap, method="failed", output=str(error))
+    def stated() -> str:
+        return goal_statement(goal_type, context, _clause_variables(source, gap.hole_index, target_name))
+
+    def modelled() -> str:
+        return llm.lemma_signature_for_gap(
+            lemma_name=lemma_name, goal_type=goal_type, context=context,
+            informal_hint=gap.informal_hint, available_names=available_names,
+            target_name=target_name,
+        )
+
+    attempts = [(stated, True)] if state_lemmas else [(modelled, False), (stated, True)]
+    result = GapResult(success=False, gap=gap, method="failed", output="No lemma was stated.")
+
+    for make, exact in attempts:
+        try:
+            signature = make()
+        except (ValueError, RuntimeError) as error:
+            log.event("promote", hole_index=gap.hole_index, lemma=lemma_name, ok=False, error=str(error))
+            result = GapResult(success=False, gap=gap, method="failed", output=str(error))
+            continue
+
+        result = _try_lemma(
+            agda_file, layout, source, gap, hammer, target_name, lemma_name, signature,
+            goal_type, context, exact, mimer_hints, verbose, session,
+        )
+
+        if result.success:
+            break
+
+    return result
+
+
+def _try_lemma(
+    agda_file: Path,
+    layout: Layout,
+    source: str,
+    gap: SketchGap,
+    hammer: HammerConfig,
+    target_name: str,
+    lemma_name: str,
+    signature: str,
+    goal_type: str,
+    context: list,
+    exact: bool,
+    mimer_hints: list[str],
+    verbose: bool,
+    session,
+) -> GapResult:
+    """Postulate one lemma for the hole and try to close the hole with it."""
+
+    log = run_logger()
 
     if not _plausible_signature(signature):
         log.event(
@@ -1116,15 +1167,15 @@ def _promote_gap_to_lemma(
         )
         return GapResult(
             success=False, gap=gap, method="failed",
-            output=f"Model returned an implausible lemma signature: {signature!r}",
+            output=f"Implausible lemma signature: {signature!r}",
         )
 
-    # A lemma restating the hole's goal is the point with `state_lemmas`: the
-    # goal is then proved on its own, one level down. Not when the hole is
-    # the whole theorem, though: that lemma is the theorem.
+    # A lemma restating the hole's goal is the point when it is stated that
+    # way on purpose (`exact`): the goal is then proved on its own, one level
+    # down. Not when the hole is the whole theorem: that lemma is the theorem.
     whole = _hole_is_whole_declaration(source, gap.hole_index, target_name)
 
-    if _is_degenerate(signature, goal_type) and (whole or not state_lemmas):
+    if _is_degenerate(signature, goal_type) and (whole or not exact):
         log.event(
             "promote", hole_index=gap.hole_index, lemma=lemma_name,
             signature=signature, ok=False, error="degenerate",
@@ -1137,11 +1188,7 @@ def _promote_gap_to_lemma(
             ),
         )
 
-    obligation = ProofObligation(
-        name=lemma_name,
-        signature=signature,
-        informal_hint=gap.informal_hint,
-    )
+    obligation = ProofObligation(name=lemma_name, signature=signature, informal_hint=gap.informal_hint)
 
     # Add rather than rewrite: the parent may already have proved sibling
     # lemmas that its final check depends on.
@@ -1153,13 +1200,13 @@ def _promote_gap_to_lemma(
 
     variables = [entry.name for entry in context if entry.in_scope]
     # The lemma applied to its own explicit binders first, then to prefixes
-    # of the in-scope variables.
+    # of the in-scope variables; Mimer, with the lemma hinted, after that.
     binders = [
         name for group in re.findall(r"\(([^():]+?)\s*:", signature) for name in group.split()
     ]
-    exact = [name for name in binders if name in variables]
+    exact_args = [name for name in binders if name in variables]
     candidates = list(dict.fromkeys(
-        ([f"{lemma_name} {' '.join(exact)}"] if exact else [])
+        ([f"{lemma_name} {' '.join(exact_args)}"] if exact_args else [])
         + [lemma_name]
         + [f"{lemma_name} {' '.join(variables[:k])}" for k in range(len(variables), 0, -1)]
     ))
@@ -1186,8 +1233,8 @@ def _promote_gap_to_lemma(
     )
 
     log.event(
-        "promote", hole_index=gap.hole_index, lemma=lemma_name,
-        signature=signature, ok=result.success, solution=result.solution,
+        "promote", hole_index=gap.hole_index, lemma=lemma_name, signature=signature,
+        stated_from_goal=exact, ok=result.success, solution=result.solution,
     )
 
     if result.success:

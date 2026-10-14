@@ -31,6 +31,7 @@ from cli.run_dsp import (
     add_run_options,
     backend_name,
     make_llm,
+    model_calls,
     prove_theorem,
     save_record,
     settle_options,
@@ -47,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkouts", default=str(config.CHECKOUTS_ROOT))
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--jobs", type=int, default=1, help="Theorems proved in parallel.")
+    parser.add_argument("--level", type=int, default=0,
+                        help="With a hidden-lemma sample (cli/sample_hidden.py): hide the "
+                             "theorem's same-file lemmas down to this depth (0: hide nothing).")
     add_run_options(parser, tag="library")
     args = settle_options(parser.parse_args(argv))
 
@@ -104,15 +108,19 @@ def run_theorem(index: int, item: dict, options: dict, run_dir: str) -> dict:
     try:
         root = checkout_for(item["repo"], item["commit"], Path(args.checkouts))
         informal = _tag(item.get("prompt", ""), "informal") or None
+        level = item.get("levels", {}).get(str(args.level)) if args.level else None
         record = prove_theorem(
             root, item["path"], item["include"], item["name"], item["line"], informal, args, llm,
+            hide=[tuple(r) for r in level["hide"]] if level else None,
+            hidden=level["statements"] if level else None,
         )
+        record["level"] = args.level
     except Exception as error:   # one theorem must not end the run
         record = {"path": item["path"], "name": item["name"],
                   "stage": "error", "error": f"{type(error).__name__}: {error}"}
     finally:
         logger.finish(result=None, success=None, target=item["name"], error=None,
-                      llm_calls=llm.calls)
+                      llm_calls=model_calls(llm))
 
     record.update(repo=item["repo"], index=index, log=str(logger.dir))
     save_record(record, logger.dir)

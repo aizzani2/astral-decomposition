@@ -33,7 +33,7 @@ from core.proof_state import DSPResult
 from core.run_log import RunLogger, run_logger, set_run_logger
 from proof.proof_sketch import prove_dsp
 from data.checkout import mirrored
-from deproof.comparison import compare
+from deproof.comparison import compare, match_statements
 from deproof.decompose import decompose
 
 
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     finally:
         logger.finish(result=None, success=bool(record.get("success")), target=args.name,
-                      error=record.get("error"), llm_calls=llm.calls)
+                      error=record.get("error"), llm_calls=model_calls(llm))
 
     save_record(record, logger.dir)
     (logger.dir / "result.json").write_text(json.dumps(record, ensure_ascii=False, indent=1, default=str))
@@ -99,6 +99,11 @@ def add_run_options(parser: argparse.ArgumentParser, tag: str) -> None:
                         help="How the model is prompted for the proof (ProofLLM.sketch_format). "
                              "definition and continuation are completion models: they imply "
                              "--no-draft, --place-holes, --state-lemmas and no model terms for holes.")
+    parser.add_argument("--planner", default=None,
+                        help="A chat model that drafts, states lemmas and fills holes, while "
+                             "--model (a completion --format) writes the proofs.")
+    parser.add_argument("--planner-url", default=config.OLLAMA_BASE_URL,
+                        help="Ollama server for an Ollama --planner.")
     parser.add_argument("--state-lemmas", action="store_true",
                         help="A stuck hole becomes a lemma stating its goal (no model call), "
                              "proved one level down.")
@@ -110,7 +115,8 @@ def add_run_options(parser: argparse.ArgumentParser, tag: str) -> None:
                         help="Skip drafting: the sketch is written from the statement alone.")
     parser.add_argument("--sketch-max-attempts", type=int, default=2)
     parser.add_argument("--max-depth", type=int, default=2)
-    parser.add_argument("--gap-llm-attempts", type=int, default=1, help="Model attempts per hole.")
+    parser.add_argument("--gap-llm-attempts", type=int, default=3,
+                        help="Model attempts per hole (each sees Agda's error on the last).")
     parser.add_argument("--no-mimer", action="store_true")
     parser.add_argument("--place-holes", action="store_true",
                         help="Place holes where a sketch fails instead of rejecting it.")
@@ -120,10 +126,15 @@ def add_run_options(parser: argparse.ArgumentParser, tag: str) -> None:
 
 
 def settle_options(args: argparse.Namespace) -> argparse.Namespace:
-    """What a completion format implies: it takes no informal text and writes whole proofs."""
+    """
+    What a completion format implies: it takes no informal text and writes
+    whole proofs. With a --planner, the planner drafts and fills holes.
+    """
 
     if args.format != "chat":
-        args.no_draft, args.place_holes, args.state_lemmas, args.gap_llm_attempts = True, True, True, 0
+        args.place_holes = args.state_lemmas = True
+        if not args.planner:
+            args.no_draft, args.gap_llm_attempts = True, 0
     return args
 
 
@@ -134,7 +145,18 @@ def make_llm(args: argparse.Namespace) -> ProofLLM:
         # Raw completion, at most as long as the fine-tunes' training examples.
         backend = OllamaBackend(model=args.model, base_url=args.base_url, think=None, num_predict=2048)
 
-    return ProofLLM(backend=backend, timeout=args.llm_timeout, sketch_format=args.format)
+    planner = None
+    if args.planner and args.format != "chat":
+        planner = ProofLLM(
+            backend=make_backend(model=args.planner, base_url=args.planner_url, think=False, effort=args.effort),
+            timeout=args.llm_timeout,
+        )
+
+    return ProofLLM(backend=backend, timeout=args.llm_timeout, sketch_format=args.format, planner=planner)
+
+
+def model_calls(llm: ProofLLM) -> int:
+    return llm.calls + (llm.planner.calls if llm.planner is not None else 0)
 
 
 def backend_name(model: str) -> str:
@@ -167,10 +189,15 @@ def prove_theorem(
     args: argparse.Namespace,
     llm: ProofLLM,
     verbose: bool = False,
+    hide: list[tuple[int, int]] | None = None,
+    hidden: dict[str, str] | None = None,
 ) -> dict:
     """
     Prove `name` in `root/path` in a mirror of the project: the library's own
     proof taken apart, the DSP run, and the two compared. Returns the record.
+    `hide` are line ranges removed before the run (lemmas it must do
+    without), and `hidden` their statements (normalised): the record says
+    which the run stated again (`recovered`).
     """
 
     record: dict = {"path": str(path), "name": name}
@@ -196,7 +223,7 @@ def prove_theorem(
 
         try:
             result = prove_dsp(
-                agda_file, name, line,
+                agda_file, name, line, hide,
                 informal_statement=informal,
                 llm=llm,
                 draft_samples=args.draft_samples,
@@ -215,6 +242,10 @@ def prove_theorem(
             return record
 
         record.update(summarize(result))
+
+        if hidden:
+            record["hidden"] = sorted(hidden)
+            record["recovered"] = match_statements(introduced_statements(result), hidden)
 
         if reference is not None:
             comparison = compare_with_decomposition(result, reference)
@@ -274,6 +305,25 @@ def introduced_lemmas(result: DSPResult) -> set[str]:
     for sub in result.lemma_results:
         names |= {sub.target_name} | introduced_lemmas(sub)
     return names
+
+
+def introduced_statements(result: DSPResult) -> dict[str, str]:
+    """The run's own lemmas with their normalised statements, at any depth."""
+
+    names = introduced_lemmas(result)
+    found: dict[str, str] = {}
+
+    def walk(r: DSPResult) -> None:
+        for d in (r.decomposition, r.sketch.decomposition if r.sketch else None):
+            if d is not None:
+                for name, type_ in d.lemma_normal.items():
+                    if name in names:
+                        found.setdefault(name, type_)
+        for sub in r.lemma_results:
+            walk(sub)
+
+    walk(result)
+    return found
 
 
 def compare_with_decomposition(result: DSPResult, reference):

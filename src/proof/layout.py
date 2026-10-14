@@ -15,6 +15,14 @@ from pathlib import Path
 
 from core.proof_state import ProofObligation
 from core.agda_source import declaration_span
+from core.sketch_ops import mask_comments
+
+# What a proof must not contain (Agda rejects them all under --safe).
+UNSAFE_PRAGMA_RE = re.compile(
+    r"\{-#\s*(?:TERMINATING|NON_TERMINATING|NO_POSITIVITY_CHECK|NO_UNIVERSE_CHECK|"
+    r"OPTIONS|BUILTIN|COMPILE|FOREIGN|INJECTIVE|ETA)\b"
+)
+UNSAFE_WORD_RE = re.compile(r"(?<![^\s(){};])(?:postulate|primTrustMe|trustMe|primEraseEquality)(?![^\s(){};])")
 
 REGION_START = "-- dsp: lemmas"
 REGION_END = "-- dsp: end of lemmas"
@@ -33,19 +41,34 @@ class Layout:
     theorem, or a lemma when the run recurses into one.
     """
 
-    def __init__(self, agda_file: Path, name: str, line: int | None = None) -> None:
-        """Set the file up to prove `name`: the theorem's clauses become one hole."""
+    def __init__(
+        self,
+        agda_file: Path,
+        name: str,
+        line: int | None = None,
+        hide: list[tuple[int, int]] | None = None,
+    ) -> None:
+        """
+        Set the file up to prove `name`: the theorem's clauses become one hole.
+        `hide` lists line ranges (1-based, inclusive) above the theorem to
+        remove first: lemmas the run must do without.
+        """
 
         self.agda_file = agda_file
         original = agda_file.read_text()
+
+        if hide:
+            original, line = _without_lines(original, hide, line)
         sig_start, body_start, _, column = declaration_span(original, name, line)
 
         self.name = name
         self.column = column
         self.pad = " " * column
         # The copy is imported by nothing, so it can give up `--safe`, which
-        # forbids the postulates lemmas are checked under.
-        self.prefix = re.sub(r"(\{-#\s*OPTIONS\b[^#]*?)\s+--safe\b", r"\1", original[:sig_start])
+        # forbids the postulates lemmas are checked under. The final check
+        # puts it back (`checked`).
+        self.safe_prefix = original[:sig_start]
+        self.prefix = re.sub(r"(\{-#\s*OPTIONS\b[^#]*?)\s+--safe\b", r"\1", self.safe_prefix)
         # A literate file cut inside a code block needs the block closed.
         fences = sum(1 for l in self.prefix.splitlines() if l.strip().startswith("```"))
         self.suffix = "\n```\n" if fences % 2 else "\n"
@@ -91,6 +114,23 @@ class Layout:
     def render(self, source: str) -> str:
         return self._compose(self._declaration_part(source))
 
+    def checked(self, source: str) -> str:
+        """`source` with the file's own options back, `--safe` included if it had it."""
+        return self._compose(self._declaration_part(source), prefix=self.safe_prefix)
+
+    def unsafe_constructs(self, source: str) -> list[str]:
+        """
+        What the run's own text (its lemmas and the declaration) uses that a
+        proof must not: postulates, termination or positivity escapes, trustMe.
+        For a file without `--safe`, which Agda would not catch.
+        """
+
+        text = self.text() + "\n" + self._declaration_part(source)
+        code = mask_comments(text)
+        found = [m.group(0).strip("{-# ") for m in UNSAFE_PRAGMA_RE.finditer(text)]
+        found += [m.group(0) for m in UNSAFE_WORD_RE.finditer(code)]
+        return list(dict.fromkeys(found))
+
     def lemma_goal(self, obligation: ProofObligation) -> None:
         """Make the lemma the declaration being proved, its proof one hole."""
         self.agda_file.write_text(self._compose(
@@ -119,11 +159,11 @@ class Layout:
                     return name
         return None
 
-    def _compose(self, declaration: str) -> str:
+    def _compose(self, declaration: str, prefix: str | None = None) -> str:
         pad = self.pad
         region = "".join(f"{_indent(text, pad)}\n\n" for _, text, _ in self.blocks)
         return (
-            f"{self.prefix}{pad}{REGION_START}\n{region}{pad}{REGION_END}\n"
+            f"{self.prefix if prefix is None else prefix}{pad}{REGION_START}\n{region}{pad}{REGION_END}\n"
             f"{_indent(declaration.strip(chr(10)), pad)}{self.suffix}"
         )
 
@@ -136,6 +176,21 @@ class Layout:
         if self.suffix.strip() and tail.endswith(self.suffix):
             tail = tail[: -len(self.suffix)]
         return _dedent(tail, self.column)
+
+
+def _without_lines(
+    source: str, ranges: list[tuple[int, int]], line: int | None
+) -> tuple[str, int | None]:
+    """`source` without the given line ranges, and where `line` moved to."""
+
+    drop = {n for start, end in ranges for n in range(start, end + 1)}
+    lines = source.splitlines(keepends=True)
+    kept = "".join(text for n, text in enumerate(lines, start=1) if n not in drop)
+
+    if line is not None:
+        line -= sum(1 for n in drop if n < line)
+
+    return kept, line
 
 
 def _indent(text: str, pad: str) -> str:

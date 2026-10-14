@@ -1,0 +1,32 @@
+{
+  "run_id": "18-xy--x-x-yx",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T22:37:39.416118+00:00",
+  "finished_at": "2026-10-14T22:38:00.112146+00:00",
+  "elapsed_s": 20.696,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 2,
+    "agda_check": 2,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 8784,
+    "output_tokens": 2187
+  },
+  "result": null,
+  "success": null,
+  "target": "[xy]⋆x≈x[yx]⋆",
+  "error": null,
+  "llm_calls": 2
+}

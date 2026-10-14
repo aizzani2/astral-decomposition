@@ -379,6 +379,11 @@ class ProofLLM:
     The last two write a whole proof (no holes, no lemmas) from no informal
     text, so they are run without drafting and with holes placed where the
     proof fails.
+
+    `planner` (a chat ProofLLM) splits the work for a completion model: the
+    planner drafts, states the lemmas, and writes terms for holes; this model
+    writes the proofs. A continuation model sees the planner's lemmas
+    postulated just above the declaration, as they would be in a file.
     """
 
     SKETCH_FORMATS = ("chat", "definition", "continuation")
@@ -390,13 +395,22 @@ class ProofLLM:
         base_url: str = config.OLLAMA_BASE_URL,
         timeout: int = config.LLM_TIMEOUT_SECONDS,
         sketch_format: str = "chat",
+        planner: ProofLLM | None = None,
     ) -> None:
         if sketch_format not in self.SKETCH_FORMATS:
             raise ValueError(f"sketch_format must be one of {self.SKETCH_FORMATS}")
         self.backend = backend or make_backend(model=model, base_url=base_url)
         self.timeout = timeout
         self.sketch_format = sketch_format
+        self.planner = planner
         self.calls = 0
+
+        if planner is not None:
+            # The planner's stages stand in for this model's.
+            self.draft_informal_proof = planner.draft_informal_proof
+            self.draft_informal_proofs = planner.draft_informal_proofs
+            self.fill_gap = planner.fill_gap
+            self.lemma_signature_for_gap = planner.lemma_signature_for_gap
 
     @property
     def model(self) -> str:
@@ -528,7 +542,20 @@ class ProofLLM:
         """
 
         if self.sketch_format != "chat":
-            return self._complete_declaration(source, target_name, signature, attempt)
+            lemmas: list[ProofObligation] = []
+            plan = ""
+
+            if self.planner is not None:
+                try:   # only the planner's lemmas are kept, not its clauses
+                    lemmas, _, plan = self.planner.sketch(
+                        source, target_name, signature, informal,
+                        available_names, previous_errors, attempt,
+                    )
+                except (ValueError, RuntimeError):
+                    lemmas = []
+
+            _, text, raw = self._complete_declaration(source, target_name, signature, attempt, lemmas)
+            return lemmas, text, (f"{plan}\n\n{raw}" if plan else raw)
 
         prompt = prompts.SKETCH_TEMPLATE.format(
             system=prompts.SKETCH_SYSTEM,
@@ -563,11 +590,16 @@ class ProofLLM:
         return lemmas, sketch.strip(), raw.strip()
 
     def _complete_declaration(
-        self, source: str, target_name: str, signature: str, attempt: int
+        self,
+        source: str,
+        target_name: str,
+        signature: str,
+        attempt: int,
+        lemmas: list[ProofObligation] = (),
     ) -> tuple[list[ProofObligation], str, str]:
         """A completion model's whole proof: (no lemmas, signature + clauses, raw)."""
 
-        start, body, _, _ = declaration_span(source, target_name)
+        start, body, _, column = declaration_span(source, target_name)
         written = _signature_as_written(source, target_name) or signature.strip()
 
         if self.sketch_format == "definition":
@@ -575,7 +607,14 @@ class ProofLLM:
         else:
             # the file's header and the declarations just above, then the signature;
             # a declaration ends at the first blank line (or a literate block's end)
-            prompt = _file_prefix(source[:start]) + source[start:body].rstrip("\n") + "\n"
+            # with `lemmas` postulated just above it, as they would be in the file
+            line_start = source.rfind("\n", 0, start) + 1
+            pad = " " * column
+            stated = "".join(f"{pad}postulate\n{pad}  {l.name} : {l.signature}\n\n" for l in lemmas)
+            prompt = (
+                _file_prefix(source[:line_start]) + stated
+                + source[line_start:body].rstrip("\n") + "\n"
+            )
             stop = ["\n\n", "\n```"]
 
         completion = self._generate("sketch", prompt, stop=stop, attempt=attempt)
@@ -596,8 +635,10 @@ class ProofLLM:
         previous_errors: list[str] | None = None,
         target_name: str = "",
         attempt: int = 0,
+        scope: str = "",
     ) -> str:
         prompt = prompts.GAP_TEMPLATE.format(
+            scope=scope or "(not available)",
             goal_type=goal_type.strip(),
             context="\n".join(f"  {e.name} : {e.type}" for e in context) or "  (empty)",
             informal_hint=informal_hint.strip() or "(none recorded)",

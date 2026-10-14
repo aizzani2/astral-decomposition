@@ -289,12 +289,18 @@ class AgdaSession:
 
         return goal, _interpret_context(objects)
 
-    def why_in_scope(self, goal_id: int, name: str) -> str:
-        """What `name` is at a hole (a constructor, a defined name, a record field, ...) and where from."""
+    def why_in_scope(self, goal_id: int | None, name: str) -> str:
+        """
+        What `name` is (a constructor, a defined name, a record field, ...)
+        and where from: at a hole, or at the module's top level (goal None).
+        """
 
         self._drain()
         escaped = name.replace("\\", "\\\\").replace('"', '\\"')
-        self._send(f'Cmd_why_in_scope {goal_id} noRange "{escaped}"')
+        if goal_id is None:
+            self._send(f'Cmd_why_in_scope_toplevel "{escaped}"')
+        else:
+            self._send(f'Cmd_why_in_scope {goal_id} noRange "{escaped}"')
         objects = self._read_objects(lambda objs: any(o.get("kind") == "DisplayInfo" for o in objs))
 
         for obj in objects:
@@ -304,11 +310,14 @@ class AgdaSession:
 
         return ""
 
-    def infer(self, goal_id: int, expression: str, rewrite: str = "Simplified") -> str:
-        """Type of `expression` in the context of one hole, as Agda prints it."""
+    def infer(self, goal_id: int | None, expression: str, rewrite: str = "Simplified") -> str:
+        """Type of `expression` at a hole, or at the module's top level (goal None)."""
 
         escaped = expression.replace("\\", "\\\\").replace('"', '\\"')
-        self._send(f'Cmd_infer {rewrite} {goal_id} noRange "{escaped}"')
+        if goal_id is None:
+            self._send(f'Cmd_infer_toplevel {rewrite} "{escaped}"')
+        else:
+            self._send(f'Cmd_infer {rewrite} {goal_id} noRange "{escaped}"')
 
         objects = self._read_objects(
             lambda objs: any(o.get("kind") == "DisplayInfo" for o in objs)
