@@ -1,0 +1,18 @@
+{
+  "run_id": "20261014-165054_astral-expmath-olmo3-7b-agda-pairs-delim_heldout24-pairs-delim-olmo",
+  "model": "astral-expmath/olmo3-7b-agda-pairs-delim-sft",
+  "backend": "ollama",
+  "tag": "heldout24-pairs-delim-olmo",
+  "started_at": "2026-10-14T16:50:54.022482+00:00",
+  "finished_at": "2026-10-14T17:00:43.583366+00:00",
+  "elapsed_s": 589.56,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 2,
+  "wall_s": 589.6
+}

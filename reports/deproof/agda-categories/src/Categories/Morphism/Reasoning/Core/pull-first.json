@@ -1,0 +1,121 @@
+{
+ "origin": {
+  "library": "agda-categories",
+  "path": "src/Categories/Morphism/Reasoning/Core.agda",
+  "commit": "fbd1259"
+ },
+ "line": 315,
+ "proof": "pull-first : f ∘ g ≈ a → f ∘ ((g ∘ h) ∘ i) ≈ a ∘ (h ∘ i)\npull-first {f = f} {g = g} {a = a} {h = h} {i = i} eq = begin\n  f ∘ (g ∘ h) ∘ i ≈⟨ refl⟩∘⟨ assoc ⟩\n  f ∘ g ∘ h ∘ i   ≈⟨ pullˡ eq ⟩\n  a ∘ h ∘ i       ∎",
+ "decomposition": {
+  "name": "pull-first",
+  "signature": "pull-first : f ∘ g ≈ a → f ∘ ((g ∘ h) ∘ i) ≈ a ∘ (h ∘ i)",
+  "clauses": [
+   {
+    "lhs": "pull-first {f = f} {g = g} {a = a} {h = h} {i = i} eq",
+    "goal": "f ∘ (g ∘ h) ∘ i ≈ a ∘ h ∘ i",
+    "variables": [
+     "f",
+     "g",
+     "a",
+     "h",
+     "i",
+     "eq"
+    ],
+    "variable_types": {
+     "o": "Level",
+     "ℓ": "Level",
+     "e": "Level",
+     "C": "Category o ℓ e",
+     "g.Y": "Obj",
+     "a.Y": "Obj",
+     "f": "g.Y ⇒ a.Y",
+     "h.Y": "Obj",
+     "g": "h.Y ⇒ g.Y",
+     "a": "h.Y ⇒ a.Y",
+     "i.Y": "Obj",
+     "h": "i.Y ⇒ h.Y",
+     "i.X": "Obj",
+     "i": "i.X ⇒ i.Y",
+     "eq": "f ∘ g ≈ a"
+    },
+    "hidden": [
+     "g.Y",
+     "a.Y",
+     "h.Y",
+     "i.Y",
+     "i.X"
+    ],
+    "steps": [
+     {
+      "statement": "f ∘ (g ∘ h) ∘ i ≈ f ∘ g ∘ h ∘ i",
+      "justification": "refl⟩∘⟨ assoc",
+      "head": "refl⟩∘⟨",
+      "uses": [
+       "assoc"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "f ∘ (g ∘ h) ∘ i",
+      "rhs": "f ∘ g ∘ h ∘ i",
+      "relation": "≈",
+      "reversed": false
+     },
+     {
+      "statement": "f ∘ g ∘ h ∘ i ≈ a ∘ h ∘ i",
+      "justification": "pullˡ eq",
+      "head": "pullˡ",
+      "uses": [
+       "pullˡ"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "f ∘ g ∘ h ∘ i",
+      "rhs": "a ∘ h ∘ i",
+      "relation": "≈",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   }
+  ],
+  "lemmas": {
+   "assoc": "{A B : Obj} {C = C₁ : Obj} {D : Obj} {f = f₁ : A ⇒ B}\n{g = g₁ : B ⇒ C₁} {h = h₁ : C₁ ⇒ D} →\n(h₁ ∘ g₁) ∘ f₁ ≈ h₁ ∘ g₁ ∘ f₁",
+   "pullˡ": "{b.Y = A : Obj} {c.Y = B : Obj} {a = C₁ : A ⇒ B} {c.X = D : Obj}\n{b = f₁ : D ⇒ A} {c = g₁ : D ⇒ B} →\nC₁ ∘ f₁ ≈ g₁ →\n{f.X : Obj} {f = f₂ : f.X ⇒ D} → C₁ ∘ f₁ ∘ f₂ ≈ g₁ ∘ f₂"
+  },
+  "lemma_normal": {
+   "assoc": "{A B : Obj} {C = C₁ : Obj} {D : Obj} {f = f₁ : A ⇒ B}\n{g = g₁ : B ⇒ C₁} {h = h₁ : C₁ ⇒ D} →\n(h₁ ∘ g₁) ∘ f₁ ≈ h₁ ∘ g₁ ∘ f₁",
+   "pullˡ": "{b.Y = A : Obj} {c.Y = B : Obj} {a = C₁ : A ⇒ B} {c.X = D : Obj}\n{b = f₁ : D ⇒ A} {c = g₁ : D ⇒ B} →\nC₁ ∘ f₁ ≈ g₁ →\n{f.X : Obj} {f = f₂ : f.X ⇒ D} → C₁ ∘ f₁ ∘ f₂ ≈ g₁ ∘ f₂"
+  }
+ },
+ "sketches": [
+  {
+   "granularity": "step",
+   "excerpt": "pull-first : f ∘ g ≈ a → f ∘ ((g ∘ h) ∘ i) ≈ a ∘ (h ∘ i)\npull-first {f = f} {g = g} {a = a} {h = h} {i = i} eq = begin\n  f ∘ (g ∘ h) ∘ i ≈⟨ {!!} ⟩  -- was: refl⟩∘⟨ assoc\n  f ∘ g ∘ h ∘ i   ≈⟨ {!!} ⟩  -- was: pullˡ eq\n  a ∘ h ∘ i       ∎",
+   "holes": [
+    "(hom-setoid Setoid.≈ f ∘ g ∘ h ∘ i) (a ∘ h ∘ i)",
+    "(hom-setoid Setoid.≈ f ∘ (g ∘ h) ∘ i) (f ∘ g ∘ h ∘ i)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  },
+  {
+   "granularity": "lemma",
+   "excerpt": "pull-first : f ∘ g ≈ a → f ∘ ((g ∘ h) ∘ i) ≈ a ∘ (h ∘ i)\npull-first {f = f} {g = g} {a = a} {h = h} {i = i} eq = begin\n  f ∘ (g ∘ h) ∘ i ≈⟨ {!!} ⟩  -- was: refl⟩∘⟨ assoc\n  f ∘ g ∘ h ∘ i   ≈⟨ {!!} ⟩  -- was: pullˡ eq\n  a ∘ h ∘ i       ∎",
+   "holes": [
+    "(hom-setoid Setoid.≈ f ∘ g ∘ h ∘ i) (a ∘ h ∘ i)",
+    "(hom-setoid Setoid.≈ f ∘ (g ∘ h) ∘ i) (f ∘ g ∘ h ∘ i)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [
+    "no step became a lemma (step 1: a ≈ step: its statement depends on the setoid in scope; step 2: a ≈ step: its statement depends on the setoid in scope)"
+   ],
+   "valid": true
+  }
+ ],
+ "comparison": null
+}

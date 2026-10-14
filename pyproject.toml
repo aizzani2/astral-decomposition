@@ -8,10 +8,11 @@ dependencies = ["requests"]
 claude = ["anthropic"]
 data = ["pyarrow"]   # reading the astral-expmath datasets (util/agda_data.py)
 dev = ["pytest"]
+serve = ["torch", "transformers>=5.17", "peft", "bitsandbytes", "accelerate", "flash-linear-attention"]   # cli/serve_hf.py
 
 [tool.setuptools.packages.find]
-where = ["code"]
+where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["code/tests"]
-pythonpath = ["code"]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

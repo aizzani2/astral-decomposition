@@ -18,7 +18,7 @@ agda-algebras), the pipeline:
    in place. Success means the file typechecks with no holes and no
    postulates left.
 
-The library's own proof of the theorem is taken apart (`util/deproof.py`)
+The library's own proof of the theorem is taken apart (`src/deproof/`)
 and the run's decomposition is compared with it.
 
 ## Setup
@@ -28,32 +28,38 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e '.[claude,data,dev]'   # anthropic, pyarrow (datasets), pytest
 pytest                                # parsers, layout, hole placement, and the whole
                                       # pipeline on a tiny fixture project with a scripted model
-python code/cli/doctor.py --model claude-sonnet-5-5   # everything a library run needs
+python -m cli.doctor --model claude-sonnet-5-5   # everything a library run needs
 ```
 
 Needs Agda 2.8.0 as `agda` on `PATH`, with standard-library-2.3 (what
 agda-categories and agda-algebras depend on) registered in its libraries
-file (`~/.config/agda/libraries-2.8.0`). Claude models need
-`ANTHROPIC_API_KEY`; Ollama models are expected at `localhost:11434`
-(`--base-url` otherwise).
+file (`~/.config/agda/libraries-2.8.0`). Claude models use
+`ANTHROPIC_API_KEY` if set and otherwise the signed-in Claude Code plan
+(`claude -p`); Ollama models are expected at `localhost:11434` (`--base-url`
+otherwise). Local Hugging Face models (e.g. the astral-expmath fine-tunes)
+are served with `tools/serve_hf.py` (`pip install -e '.[serve]'`).
 
 ## Running
 
-Everything is run from `code/`:
+From the repository root:
 
 ```bash
-cd code
-python cli/run_dsp.py ~/agda/data/agda-stdlib/src/Data/Nat/Properties.agda +-comm \
-    --model claude-sonnet-5-5                    # one theorem
-python cli/run_dsp_dataset.py ../samples/test24.json --model claude-sonnet-5-5 \
-    --jobs 4 --tag mytag                         # a sample (see Datasets)
-python cli/run_dsp.py --help                     # budgets, --no-draft, --place-holes, ...
+python -m cli.run_dsp ~/agda/data/agda-stdlib/src/Data/Nat/Properties.agda +-comm \
+    --model claude-haiku-5-5                     # one theorem
+python -m cli.run_dsp_dataset samples/heldout24.json --model claude-haiku-5-5 \
+    --jobs 2 --tag mytag                         # a sample (see Datasets)
+python -m cli.run_dsp_dataset samples/heldout24.json --format continuation \
+    --model astral-expmath/qwen3.5-4b-agda-raw-cpt-merged --base-url http://localhost:11437
+python -m cli.run_dsp --help                     # budgets, --no-draft, --place-holes, --format, ...
 ```
 
-The backend is picked from the model name (`claude*` → Anthropic, otherwise
-Ollama). Defaults live in `core/config.py`. A run works in a symlink mirror
-of the project (`util/checkout.py`): the theorem's file is a private copy,
-cut after the theorem, and nothing is ever written into the project.
+The backend is picked from the model name (`claude*` → Anthropic or Claude
+Code, otherwise Ollama). `--format` says how the model is prompted for a
+proof (chat stage prompts, a pairs-delim `<signature>…<definition>`, or the
+file up to the signature for a raw-Agda model). Defaults live in
+`core/config.py`. A run works in a symlink mirror of the project
+(`data/checkout.py`): the theorem's file is a private copy, cut after the
+theorem, and nothing is ever written into the project.
 
 ## Run logs
 
@@ -87,41 +93,46 @@ scope (`target`, `depth`, `draft_index`). Kinds:
 - `lemma_start` / `lemma_end`, `lemma_unused`, `dsp_result` (per nested
   attempt, with the stage that failed)
 - `decomposition` – every sketch and finished proof taken apart by
-  `util/deproof.py`: its clauses, the steps of each clause, and the lemmas
+  `deproof`: its clauses, the steps of each clause, and the lemmas
   each step uses; `decomposition_compare` – the run lined up against the
   library's proof
 
 Summarise runs with:
 
 ```bash
-python cli/analyze_runs.py                  # one row per run
-python cli/analyze_runs.py --dataset <tag>  # per theorem: lemma funnel, holes, repairs
-python cli/analyze_runs.py --llm <run-id>   # every model call; --full adds prompts/responses
-python cli/analyze_runs.py --events <run-id>
-python cli/analyze_runs.py --decomposition <run-id>  # finished proofs as steps + lemmas
+python -m cli.analyze_runs                  # one row per run
+python -m cli.analyze_runs --dataset <tag>  # per theorem: lemma funnel, holes, repairs
+python -m cli.analyze_runs --llm <run-id>   # every model call; --full adds prompts/responses
+python -m cli.analyze_runs --events <run-id>
+python -m cli.analyze_runs --decomposition <run-id>  # finished proofs as steps + lemmas
 ```
 
 ## Layout
 
-- `code/core/` – `config`, `llm_client` (backends + stage prompts), `prompts`,
-  `agda_client` (interaction protocol, Mimer), `hammer`, `run_log`, file and
+- `src/core/` – `config`, `llm_client` (backends: Ollama, Anthropic, Claude
+  Code; stage prompts), `prompts`, `agda_client` (interaction protocol,
+  Mimer), `hammer`, `run_log`, `agda_source` (reading declarations, clauses
+  and `begin ... ∎` chains from Agda text), `sketch_ops` (holes), file and
   state helpers
-- `code/proof/proof_sketch.py` – the DSP orchestration; `proof/layout.py`
-  (the theorem's file and its lemma region), `proof/holes.py` (holes placed
-  where an attempt fails)
-- `code/util/agda_source.py` – reading declarations, clauses and
-  `begin ... ∎` chains from Agda text (nested modules, multi-line
-  signatures, `rewrite`/`with`, literate Markdown)
-- `code/util/deproof.py` – takes a finished proof apart into its case split,
-  equational steps and lemmas, and compares two decompositions of the same
-  theorem. `code/util/sketch_export.py` (`--sketch {clause,step,lemma}`)
-  turns a finished proof back into a holed sketch, checked by Agda
-- `code/util/agda_data.py`, `code/util/checkout.py` – reading the
-  astral-expmath datasets and working on a checkout through a symlink mirror
-- `code/cli/` – `run_dsp.py`, `run_dsp_dataset.py`, `sample_dataset.py`,
-  `analyze_runs.py`, `deproof_dataset.py`, `doctor.py`
-- `code/tests/` – pytest suite; `tests/agda/` is its fixture project
-- `samples/` – theorem samples for `run_dsp_dataset.py`
+- `src/proof/` – the DSP pipeline: `proof_sketch.py` (orchestration),
+  `layout.py` (the theorem's file and its lemma region), `holes.py` (holes
+  placed where an attempt fails)
+- `src/deproof/` – the decomposition tool, also used by the pipeline:
+  `decompose.py` takes a finished proof apart into its case split, steps and
+  lemmas (`decomposition.py`); `comparison.py` lines up two decompositions;
+  `sketch_export.py` turns a proof back into a checked sketch with holes.
+  `python -m deproof FILE NAME --checkout ROOT` writes
+  `reports/deproof/<library>/<file>/<name>.agda` (the library's proof, its
+  decomposition in comments, and the sketches) with a `.json` beside it;
+  `python -m deproof.dataset` runs it over the datasets
+- `src/data/` – the astral-expmath datasets (`agda_data.py`) and working on
+  a library checkout through a symlink mirror (`checkout.py`)
+- `src/cli/` – `run_dsp`, `run_dsp_dataset`, `sample_dataset`,
+  `analyze_runs`, `doctor`
+- `tools/serve_hf.py` – a local model server (a Hugging Face model or LoRA
+  adapter behind Ollama's API)
+- `tests/` – pytest suite; `tests/agda/` is its fixture project
+- `samples/` – theorem samples; `runs/` – run logs; `reports/` – deproof reports
 - `examples/` – harder targets, discussed in `decomp-examples.md`
 
 ## Datasets
@@ -139,7 +150,7 @@ agda-algebras; DSP runs sample its test split, which the fine-tune never saw).
 hf download --repo-type dataset astral-expmath/agda-decls --local-dir ~/agda/data/hf/agda-decls
 hf download --repo-type dataset astral-expmath/agda-informalize-stdlib --local-dir ~/agda/data/hf/agda-informalize-stdlib
 hf download --repo-type dataset astral-expmath/agda-autoformalize-context --local-dir ~/agda/data/hf/agda-autoformalize-context
-# each library at the commit the datasets pin (util/agda_data.py: PINNED), and stdlib v2.3
+# each library at the commit the datasets pin (data/agda_data.py: PINNED), and stdlib v2.3
 git -C ~/agda/data clone https://github.com/agda/agda-stdlib && git -C ~/agda/data/agda-stdlib checkout 47beb938489d1d9dd27c93c828a4e5e161acf758
 ```
 
@@ -148,11 +159,10 @@ directory per repo, and must be at the pinned commit; datasets under
 `ASTRAL_DATASETS` (default `<checkouts>/hf`).
 
 ```bash
-cd code
-python cli/sample_dataset.py --out ../samples/test24.json   # 8 per repo, 4 of them chains
-python util/deproof.py src/Data/Nat/Properties.agda +-comm \
-    --checkout ~/agda/data/agda-stdlib --sketch step
-python cli/deproof_dataset.py --informal <informalize parquet> --decls <decls parquet> \
+python -m cli.sample_dataset --out samples/test24.json      # 8 per repo, 4 of them chains
+python -m cli.sample_dataset --held-out-in agda-pairs-delim --out samples/heldout24.json
+python -m deproof src/Data/Nat/Properties.agda +-comm --checkout ~/agda/data/agda-stdlib
+python -m deproof.dataset --informal <informalize parquet> --decls <decls parquet> \
     --sample 40 --jobs 3 --out deproof.jsonl
 ```
 
@@ -226,9 +236,9 @@ the midpoint becomes an unsolved meta. Holes must also be writable in the
 file: a goal that Agda prints with qualified names, or that mentions
 variables the clause never binds, cannot be stated as a lemma there.
 
-**Working backwards from a proof (analytic) works.** `util/deproof.py` takes
+**Working backwards from a proof (analytic) works.** `deproof` takes
 a finished proof apart into clauses, steps and the lemmas each step uses;
-`util/sketch_export.py` turns it back into a sketch with holes at clause,
+`deproof/sketch_export.py` turns it back into a sketch with holes at clause,
 step or lemma granularity, and Agda checks the result. On stdlib, step
 sketches were valid for 28/30 proofs of `Data.Nat.Properties` and 27/35 of a
 random sample (lemma sketches 25/30 and 21/35), before later fixes; where a

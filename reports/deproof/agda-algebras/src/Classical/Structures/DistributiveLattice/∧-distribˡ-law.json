@@ -1,0 +1,159 @@
+{
+ "origin": {
+  "library": "agda-algebras",
+  "path": "src/Classical/Structures/DistributiveLattice.lagda.md",
+  "commit": "c56c89b"
+ },
+ "line": 123,
+ "proof": "∧-distribˡ-law : ∀ x y z → x ∧ (y ∨ z) ≈ (x ∧ y) ∨ (x ∧ z)\n∧-distribˡ-law x y z = begin\n  x ∧ (y ∨ z)                   ≈⟨ ∧-cong refl (sym (interp-node-∨ (ℊ 1F) (ℊ 2F) {η})) ⟩\n  x ∧ ⟦ y∨z ⟧ ⟨$⟩ η             ≈⟨ sym (interp-node-∧ (ℊ 0F) y∨z {η}) ⟩\n  ⟦ lhsT ⟧ ⟨$⟩ η                ≈⟨ equations ∧-distribˡ η ⟩\n  ⟦ rhsT ⟧ ⟨$⟩ η                ≈⟨ interp-node-∨ xy xz {η} ⟩\n  ⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η   ≈⟨ ∨-cong (interp-node-∧ (ℊ 0F) (ℊ 1F) {η}) (interp-node-∧ (ℊ 0F) (ℊ 2F) {η}) ⟩\n  (x ∧ y) ∨ (x ∧ z)             ∎\n  where\n  η : Fin 3 → 𝕌[ 𝑨 ]\n  η = λ { 0F → x ; 1F → y ; 2F → z }\n  y∨z xy xz lhsT rhsT : Term (Fin 3)\n  y∨z  = node ∨-Op (pair (ℊ 1F) (ℊ 2F))\n  xy   = node ∧-Op (pair (ℊ 0F) (ℊ 1F))\n  xz   = node ∧-Op (pair (ℊ 0F) (ℊ 2F))\n  lhsT = node ∧-Op (pair (ℊ 0F) y∨z)\n  rhsT = node ∨-Op (pair xy xz)",
+ "decomposition": {
+  "name": "∧-distribˡ-law",
+  "signature": "∧-distribˡ-law : ∀ x y z → x ∧ (y ∨ z) ≈ (x ∧ y) ∨ (x ∧ z)",
+  "clauses": [
+   {
+    "lhs": "∧-distribˡ-law x y z",
+    "goal": "x ∧ (y ∨ z) ≈ x ∧ y ∨ x ∧ z",
+    "variables": [
+     "x",
+     "y",
+     "z"
+    ],
+    "variable_types": {
+     "α": "Level",
+     "ρ": "Level",
+     "𝑫": "DistributiveLattice α ρ",
+     "x": "Setoid.Carrier\n(Setoid.Algebras.Basic.Algebra.Domain\n (Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)))",
+     "y": "Setoid.Carrier\n(Setoid.Algebras.Basic.Algebra.Domain\n (Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)))",
+     "z": "Setoid.Carrier\n(Setoid.Algebras.Basic.Algebra.Domain\n (Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)))"
+    },
+    "hidden": [],
+    "steps": [
+     {
+      "statement": "x ∧ (y ∨ z) ≈ x ∧ ⟦ y∨z ⟧ ⟨$⟩ η",
+      "justification": "∧-cong refl (sym (interp-node-∨ (ℊ 1F) (ℊ 2F) {η}))",
+      "head": "∧-cong",
+      "uses": [
+       "∧-cong",
+       "interp-node-∨"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "x ∧ (y ∨ z)",
+      "rhs": "x ∧ ⟦ y∨z ⟧ ⟨$⟩ η",
+      "relation": "≈",
+      "reversed": false
+     },
+     {
+      "statement": "x ∧ ⟦ y∨z ⟧ ⟨$⟩ η ≈ ⟦ lhsT ⟧ ⟨$⟩ η",
+      "justification": "sym (interp-node-∧ (ℊ 0F) y∨z {η})",
+      "head": "interp-node-∧",
+      "uses": [
+       "interp-node-∧"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "x ∧ ⟦ y∨z ⟧ ⟨$⟩ η",
+      "rhs": "⟦ lhsT ⟧ ⟨$⟩ η",
+      "relation": "≈",
+      "reversed": false
+     },
+     {
+      "statement": "⟦ lhsT ⟧ ⟨$⟩ η ≈ ⟦ rhsT ⟧ ⟨$⟩ η",
+      "justification": "equations ∧-distribˡ η",
+      "head": "equations",
+      "uses": [
+       "equations"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "⟦ lhsT ⟧ ⟨$⟩ η",
+      "rhs": "⟦ rhsT ⟧ ⟨$⟩ η",
+      "relation": "≈",
+      "reversed": false
+     },
+     {
+      "statement": "⟦ rhsT ⟧ ⟨$⟩ η ≈ ⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η",
+      "justification": "interp-node-∨ xy xz {η}",
+      "head": "interp-node-∨",
+      "uses": [
+       "interp-node-∨"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "⟦ rhsT ⟧ ⟨$⟩ η",
+      "rhs": "⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η",
+      "relation": "≈",
+      "reversed": false
+     },
+     {
+      "statement": "⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η ≈ (x ∧ y) ∨ (x ∧ z)",
+      "justification": "∨-cong (interp-node-∧ (ℊ 0F) (ℊ 1F) {η}) (interp-node-∧ (ℊ 0F) (ℊ 2F) {η})",
+      "head": "∨-cong",
+      "uses": [
+       "∨-cong",
+       "interp-node-∧"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η",
+      "rhs": "(x ∧ y) ∨ (x ∧ z)",
+      "relation": "≈",
+      "reversed": false
+     }
+    ],
+    "note": "where-block not taken apart"
+   }
+  ],
+  "lemmas": {
+   "∧-cong": "{x = x₁\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))}\n{y = y₁\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))}\n{u v\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))} →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ x₁)\ny₁ →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ u)\nv →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ x₁ ∧ u)\n(y₁ ∧ v)",
+   "interp-node-∨": "(s t : Term (Fin 3))\n{η = η₁\n : Fin 3 →\n   Setoid.Algebras.Basic.𝕌[\n   Classical.Structures.Lattice.Lattice-Op.𝑨\n   (distributiveLattice→lattice 𝑫)\n   ]} →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈\n (Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  (Overture.Terms.node ∨-Op (pair s t))\n  ⟨$⟩ η₁))\n((Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  s\n  ⟨$⟩ η₁)\n ∨\n (Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  t\n  ⟨$⟩ η₁))",
+   "interp-node-∧": "(s t : Term (Fin 3))\n{η = η₁\n : Fin 3 →\n   Setoid.Algebras.Basic.𝕌[\n   Classical.Structures.Lattice.Lattice-Op.𝑨\n   (distributiveLattice→lattice 𝑫)\n   ]} →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈\n (Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  (Overture.Terms.node ∧-Op (pair s t))\n  ⟨$⟩ η₁))\n((Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  s\n  ⟨$⟩ η₁)\n ∧\n (Environment.⟦\n  Classical.Structures.Lattice.Lattice-Op.𝑨\n  (distributiveLattice→lattice 𝑫)\n  ⟧\n  t\n  ⟨$⟩ η₁))",
+   "equations": "𝑨 ⊨ᵈˡ Th-DistributiveLattice",
+   "∨-cong": "{x = x₁\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))}\n{y = y₁\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))}\n{u v\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain\n    (Classical.Structures.Lattice.Lattice-Op.𝑨\n     (distributiveLattice→lattice 𝑫)))} →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ x₁)\ny₁ →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ u)\nv →\n(Setoid.Algebras.Basic.𝔻[\n Classical.Structures.Lattice.Lattice-Op.𝑨\n (distributiveLattice→lattice 𝑫)\n ]\n Setoid.≈ x₁ ∨ u)\n(y₁ ∨ v)"
+  },
+  "lemma_normal": {
+   "∧-cong": "{x = x₁\n : Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))}\n{y = y₁\n : Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))}\n{u v\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))} →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈ x₁) y₁ →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈ u) v →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈\n (Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n  (∧-Op , pair x₁ u)))\n(Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n (∧-Op , pair y₁ v))",
+   "interp-node-∨": "(s t : Overture.Terms.Basic.Term (Fin 3))\n{η = η₁\n : Fin 3 →\n   Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))} →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈\n (Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n  (∨-Op ,\n   (λ i →\n      Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ (pair s t i) ⟨$⟩ η₁))))\n(Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n (∨-Op ,\n  pair (Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ s ⟨$⟩ η₁)\n  (Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ t ⟨$⟩ η₁)))",
+   "interp-node-∧": "(s t : Overture.Terms.Basic.Term (Fin 3))\n{η = η₁\n : Fin 3 →\n   Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))} →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈\n (Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n  (∧-Op ,\n   (λ i →\n      Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ (pair s t i) ⟨$⟩ η₁))))\n(Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n (∧-Op ,\n  pair (Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ s ⟨$⟩ η₁)\n  (Setoid.Terms.Basic.Environment.⟦ 𝑫 .proj₁ ⟧ t ⟨$⟩ η₁)))",
+   "equations": "(s : Eq-DistributiveLattice)\n(ρ₁\n : Fin 3 →\n   Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (proj₁ 𝑫))) →\n(Setoid.Algebras.Basic.Algebra.Domain (proj₁ 𝑫) Setoid.≈\n (Setoid.Terms.Basic.Environment.⟦ proj₁ 𝑫 ⟧\n  (proj₁ (Th-DistributiveLattice s))\n  ⟨$⟩ ρ₁))\n(Setoid.Terms.Basic.Environment.⟦ proj₁ 𝑫 ⟧\n (proj₂ (Th-DistributiveLattice s))\n ⟨$⟩ ρ₁)",
+   "∨-cong": "{x = x₁\n : Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))}\n{y = y₁\n : Setoid.Carrier (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))}\n{u v\n : Setoid.Carrier\n   (Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁))} →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈ x₁) y₁ →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈ u) v →\n(Setoid.Algebras.Basic.Algebra.Domain (𝑫 .proj₁) Setoid.≈\n (Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n  (∨-Op , pair x₁ u)))\n(Setoid.Algebras.Basic.Algebra.Interp (𝑫 .proj₁) ⟨$⟩\n (∨-Op , pair y₁ v))"
+  }
+ },
+ "sketches": [
+  {
+   "granularity": "step",
+   "excerpt": "  ∧-distribˡ-law : ∀ x y z → x ∧ (y ∨ z) ≈ (x ∧ y) ∨ (x ∧ z)\n  ∧-distribˡ-law x y z = begin\n    x ∧ (y ∨ z)                   ≈⟨ {!!} ⟩  -- was: ∧-cong refl (sym (interp-node-∨ (ℊ 1F) (ℊ 2F) {η}))\n    x ∧ ⟦ y∨z ⟧ ⟨$⟩ η             ≈⟨ {!!} ⟩  -- was: sym (interp-node-∧ (ℊ 0F) y∨z {η})\n    ⟦ lhsT ⟧ ⟨$⟩ η                ≈⟨ {!!} ⟩  -- was: equations ∧-distribˡ η\n    ⟦ rhsT ⟧ ⟨$⟩ η                ≈⟨ {!!} ⟩  -- was: interp-node-∨ xy xz {η}\n    ⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η   ≈⟨ {!!} ⟩  -- was: ∨-cong (interp-node-∧ (ℊ 0F) (ℊ 1F) {η}) (interp-node-∧ (ℊ 0F) (ℊ 2F) {η})\n    (x ∧ y) ∨ (x ∧ z)             ∎\n    where\n    η : Fin 3 → 𝕌[ 𝑨 ]\n    η = λ { 0F → x ; 1F → y ; 2F → z }\n    y∨z xy xz lhsT rhsT : Term (Fin 3)\n    y∨z  = node ∨-Op (pair (ℊ 1F) (ℊ 2F))\n    xy   = node ∧-Op (pair (ℊ 0F) (ℊ 1F))\n    xz   = node ∧-Op (pair (ℊ 0F) (ℊ 2F))\n    lhsT = node ∧-Op (pair (ℊ 0F) y∨z)\n    rhsT = node ∨-Op (pair xy xz)",
+   "holes": [
+    "(⟦ xy ⟧ ⟨$⟩ η) ∨ (⟦ xz ⟧ ⟨$⟩ η) ≈ x ∧ y ∨ x ∧ z",
+    "(⟦ rhsT ⟧ ⟨$⟩ η) ≈ (⟦ xy ⟧ ⟨$⟩ η) ∨ (⟦ xz ⟧ ⟨$⟩ η)",
+    "(⟦ lhsT ⟧ ⟨$⟩ η) ≈ (⟦ rhsT ⟧ ⟨$⟩ η)",
+    "x ∧ (⟦ y∨z ⟧ ⟨$⟩ η) ≈ (⟦ lhsT ⟧ ⟨$⟩ η)",
+    "x ∧ (y ∨ z) ≈ x ∧ (⟦ y∨z ⟧ ⟨$⟩ η)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  },
+  {
+   "granularity": "lemma",
+   "excerpt": "  ∧-distribˡ-law : ∀ x y z → x ∧ (y ∨ z) ≈ (x ∧ y) ∨ (x ∧ z)\n  ∧-distribˡ-law x y z = begin\n    x ∧ (y ∨ z)                   ≈⟨ {!!} ⟩  -- was: ∧-cong refl (sym (interp-node-∨ (ℊ 1F) (ℊ 2F) {η}))\n    x ∧ ⟦ y∨z ⟧ ⟨$⟩ η             ≈⟨ {!!} ⟩  -- was: sym (interp-node-∧ (ℊ 0F) y∨z {η})\n    ⟦ lhsT ⟧ ⟨$⟩ η                ≈⟨ {!!} ⟩  -- was: equations ∧-distribˡ η\n    ⟦ rhsT ⟧ ⟨$⟩ η                ≈⟨ {!!} ⟩  -- was: interp-node-∨ xy xz {η}\n    ⟦ xy ⟧ ⟨$⟩ η ∨ ⟦ xz ⟧ ⟨$⟩ η   ≈⟨ {!!} ⟩  -- was: ∨-cong (interp-node-∧ (ℊ 0F) (ℊ 1F) {η}) (interp-node-∧ (ℊ 0F) (ℊ 2F) {η})\n    (x ∧ y) ∨ (x ∧ z)             ∎\n    where\n    η : Fin 3 → 𝕌[ 𝑨 ]\n    η = λ { 0F → x ; 1F → y ; 2F → z }\n    y∨z xy xz lhsT rhsT : Term (Fin 3)\n    y∨z  = node ∨-Op (pair (ℊ 1F) (ℊ 2F))\n    xy   = node ∧-Op (pair (ℊ 0F) (ℊ 1F))\n    xz   = node ∧-Op (pair (ℊ 0F) (ℊ 2F))\n    lhsT = node ∧-Op (pair (ℊ 0F) y∨z)\n    rhsT = node ∨-Op (pair xy xz)",
+   "holes": [
+    "(⟦ xy ⟧ ⟨$⟩ η) ∨ (⟦ xz ⟧ ⟨$⟩ η) ≈ x ∧ y ∨ x ∧ z",
+    "(⟦ rhsT ⟧ ⟨$⟩ η) ≈ (⟦ xy ⟧ ⟨$⟩ η) ∨ (⟦ xz ⟧ ⟨$⟩ η)",
+    "(⟦ lhsT ⟧ ⟨$⟩ η) ≈ (⟦ rhsT ⟧ ⟨$⟩ η)",
+    "x ∧ (⟦ y∨z ⟧ ⟨$⟩ η) ≈ (⟦ lhsT ⟧ ⟨$⟩ η)",
+    "x ∧ (y ∨ z) ≈ x ∧ (⟦ y∨z ⟧ ⟨$⟩ η)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [
+    "no step became a lemma (step 1: uses where-bound y∨z, η; step 2: uses where-bound lhsT, y∨z, η; step 3: uses where-bound lhsT, rhsT, η; step 4: uses where-bound rhsT, xy, xz, η; step 5: uses where-bound xy, xz, η)"
+   ],
+   "valid": true
+  }
+ ],
+ "comparison": null
+}

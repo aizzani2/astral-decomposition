@@ -1,0 +1,139 @@
+{
+ "origin": {
+  "library": "agda-stdlib",
+  "path": "src/Data/Nat/Properties.agda",
+  "commit": "47beb93"
+ },
+ "line": 567,
+ "proof": "+-comm : Commutative _+_\n+-comm zero    n = sym (+-identityʳ n)\n+-comm (suc m) n = begin-equality\n  suc m + n   ≡⟨⟩\n  suc (m + n) ≡⟨ cong suc (+-comm m n) ⟩\n  suc (n + m) ≡⟨ sym (+-suc n m) ⟩\n  n + suc m   ∎",
+ "decomposition": {
+  "name": "+-comm",
+  "signature": "+-comm : Commutative _+_",
+  "clauses": [
+   {
+    "lhs": "+-comm zero n",
+    "goal": "zero + n ≡ n + zero",
+    "variables": [
+     "n"
+    ],
+    "variable_types": {
+     "n": "ℕ"
+    },
+    "hidden": [],
+    "steps": [
+     {
+      "statement": "zero + n ≡ n + zero",
+      "justification": "sym (+-identityʳ n)",
+      "head": "+-identityʳ",
+      "uses": [
+       "+-identityʳ"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "",
+      "rhs": "",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   },
+   {
+    "lhs": "+-comm (suc m) n",
+    "goal": "suc m + n ≡ n + suc m",
+    "variables": [
+     "m",
+     "n"
+    ],
+    "variable_types": {
+     "m": "ℕ",
+     "n": "ℕ"
+    },
+    "hidden": [],
+    "steps": [
+     {
+      "statement": "suc m + n ≡ suc (m + n)",
+      "justification": "",
+      "head": "",
+      "uses": [],
+      "recursive": false,
+      "normal": "",
+      "lhs": "suc m + n",
+      "rhs": "suc (m + n)",
+      "relation": "≡",
+      "reversed": false
+     },
+     {
+      "statement": "suc (m + n) ≡ suc (n + m)",
+      "justification": "cong suc (+-comm m n)",
+      "head": "+-comm",
+      "uses": [],
+      "recursive": true,
+      "normal": "",
+      "lhs": "suc (m + n)",
+      "rhs": "suc (n + m)",
+      "relation": "≡",
+      "reversed": false
+     },
+     {
+      "statement": "suc (n + m) ≡ n + suc m",
+      "justification": "sym (+-suc n m)",
+      "head": "+-suc",
+      "uses": [
+       "+-suc"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "suc (n + m)",
+      "rhs": "n + suc m",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   }
+  ],
+  "lemmas": {
+   "+-identityʳ": "RightIdentity 0 _+_",
+   "+-suc": "(m₁ n₁ : ℕ) → m₁ + suc n₁ ≡ suc (m₁ + n₁)"
+  },
+  "lemma_normal": {
+   "+-identityʳ": "(x : ℕ) → x + 0 ≡ x",
+   "+-suc": "(m₁ n₁ : ℕ) → m₁ + suc n₁ ≡ suc (m₁ + n₁)"
+  }
+ },
+ "sketches": [
+  {
+   "granularity": "step",
+   "excerpt": "+-comm : Commutative _+_\n+-comm zero    n = -- was: sym (+-identityʳ n)\n  {!!}\n+-comm (suc m) n = begin-equality\n  suc m + n   ≡⟨⟩\n  suc (m + n) ≡⟨ {!!} ⟩  -- was: cong suc (+-comm m n)\n  suc (n + m) ≡⟨ {!!} ⟩  -- was: sym (+-suc n m)\n  n + suc m   ∎",
+   "holes": [
+    "zero + n ≡ n + zero",
+    "suc (n + m) ≡ n + suc m",
+    "suc (m + n) ≡ suc (n + m)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  },
+  {
+   "granularity": "lemma",
+   "excerpt": "+-comm-lemma1 : (n : ℕ) → zero + n ≡ n + zero\n-- was: sym (+-identityʳ n)\n+-comm-lemma1 n = {!!}\n+-comm-lemma2 : (m : ℕ) → (n : ℕ) → suc (n + m) ≡ n + suc m\n+-comm-lemma2 m n = {!!}\n+-comm : Commutative _+_\n+-comm zero    n = +-comm-lemma1 n\n+-comm (suc m) n = begin-equality\n  suc m + n   ≡⟨⟩\n  suc (m + n) ≡⟨ {!!} ⟩  -- was: cong suc (+-comm m n)\n  suc (n + m) ≡⟨ +-comm-lemma2 m n ⟩\n  n + suc m   ∎",
+   "holes": [
+    "zero + n ≡ n + zero",
+    "suc (n + m) ≡ n + suc m",
+    "suc (m + n) ≡ suc (n + m)"
+   ],
+   "lemmas": [
+    "+-comm-lemma1",
+    "+-comm-lemma2"
+   ],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  }
+ ],
+ "comparison": null
+}

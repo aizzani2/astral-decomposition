@@ -1,0 +1,26 @@
+{
+  "run_id": "02-is-fold",
+  "model": "astral-expmath/olmo3-7b-agda-pairs-delim-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T16:50:54.036735+00:00",
+  "finished_at": "2026-10-14T16:51:38.752440+00:00",
+  "elapsed_s": 44.715,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 4,
+    "sketch_repair": 4,
+    "agda_check": 4,
+    "sketch_attempt": 4,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 128,
+    "output_tokens": 225
+  },
+  "result": null,
+  "success": null,
+  "target": "*+-is-fold",
+  "error": null,
+  "llm_calls": 4
+}

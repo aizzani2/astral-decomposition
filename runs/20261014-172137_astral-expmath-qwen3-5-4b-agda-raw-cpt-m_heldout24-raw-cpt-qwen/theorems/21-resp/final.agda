@@ -1,0 +1,120 @@
+---
+layout: default
+title : "Base.Subalgebras.Properties module (The Agda Universal Algebra Library)"
+date : "2021-07-18"
+author: "agda-algebras development team"
+---
+
+### <a id="properties-of-the-subalgebra-inclusion-relation">Properties of the Subalgebra Inclusion Relation</a>
+
+
+```agda
+
+
+{-# OPTIONS --cubical-compatible --exact-split #-}
+
+open import Overture using (𝓞 ; 𝓥 ; Signature )
+
+module Legacy.Base.Subalgebras.Properties {𝑆 : Signature 𝓞 𝓥} where
+
+-- Imports from Agda and the Agda Standard Library -------------------------------
+open import Data.Product     using ( _,_ ) renaming ( proj₁ to fst ; proj₂ to snd )
+open import Function         using ( _∘_ ; id ; flip ; Injection )
+open import Level            using ( Level; _⊔_ )
+open import Relation.Unary   using ( Pred ; _⊆_ )
+open import Relation.Binary  using ( _Respectsʳ_ ; _Respectsˡ_ )
+
+open  import Relation.Binary.PropositionalEquality as ≡
+      using ( _≡_ ; module ≡-Reasoning )
+
+-- Imports from the Agda Universal Algebra Library --------------------
+open  import Overture        using ( ∣_∣ ; ∥_∥ ; _⁻¹ )
+open  import Legacy.Base.Functions  using ( id-is-injective ; IsInjective ; ∘-injective )
+
+open  import Legacy.Base.Algebras       {𝑆 = 𝑆}  using ( Algebra ; Lift-Alg ; ov )
+open  import Legacy.Base.Homomorphisms  {𝑆 = 𝑆}  using ( is-homomorphism ; ∘-hom )
+                                          using ( ∘-is-hom ; _≅_ ; ≅toInjective )
+                                          using ( ≅fromInjective ; ≅-refl ; ≅-sym )
+                                          using ( ≅-trans ; Lift-≅ ; mkiso )
+open  import Legacy.Base.Subalgebras.Subalgebras
+                                 {𝑆 = 𝑆}  using  ( _≤_ ; _≥_ ; _IsSubalgebraOfClass_ )
+
+private variable α β γ 𝓧 : Level
+
+-- The subalgebra relation is a *preorder* (a reflexive, transitive, binary relation).
+
+open _≅_
+
+≤-refl : {𝑨 : Algebra α}{𝑩 : Algebra β} → 𝑨 ≅ 𝑩 → 𝑨 ≤ 𝑩
+≤-refl φ = (to φ) , ≅toInjective φ
+
+≥-refl : {𝑨 : Algebra α}{𝑩 : Algebra β} → 𝑨 ≅ 𝑩 → 𝑨 ≥ 𝑩
+≥-refl φ = (from φ) , ≅fromInjective φ
+
+≤-reflexive : (𝑨 : Algebra α) → 𝑨 ≤ 𝑨
+≤-reflexive 𝑨 = (id , λ 𝑓 𝑎 → ≡.refl) , Injection.injective id-is-injective
+
+≤-trans :  (𝑨 : Algebra α){𝑩 : Algebra β}(𝑪 : Algebra γ)
+ →         𝑨 ≤ 𝑩 → 𝑩 ≤ 𝑪 → 𝑨 ≤ 𝑪
+
+≤-trans 𝑨 𝑪 A≤B B≤C = (∘-hom 𝑨 𝑪 ∣ A≤B ∣ ∣ B≤C ∣) , ∘-injective ∥ A≤B ∥ ∥ B≤C ∥
+
+
+≥-trans :  (𝑨 : Algebra α){𝑩 : Algebra β}(𝑪 : Algebra γ)
+ →         𝑨 ≥ 𝑩 → 𝑩 ≥ 𝑪 → 𝑨 ≥ 𝑪
+
+≥-trans 𝑨 𝑪 A≥B B≥C = ≤-trans 𝑪 𝑨 B≥C A≥B
+```
+
+
+#### <a id="relations-between">Relations between ≤, ≥, and ≅</a>
+
+In case all algebras live in the same universe level, we can use some of the definitions
+in the standard library. However, to obtain more general versions, we need to either
+extend the standard library's Binary.Structures module to be universe polymorphic, or
+just implement what we need here.  For now we do the latter (below).
+
+
+```agda
+
+
+module _ {α : Level} where
+
+ open import Relation.Binary.Structures {a = (ov α)}{ℓ = (𝓞 ⊔ 𝓥 ⊔ α)} (_≅_ {α}{α})
+
+ open IsPreorder
+
+ ≤-preorder : IsPreorder _≤_
+ isEquivalence ≤-preorder = record { refl = ≅-refl ; sym = ≅-sym ; trans = ≅-trans }
+ reflexive ≤-preorder = ≤-refl
+ trans ≤-preorder {𝑨}{𝑩}{𝑪} A≤B B≤C = ≤-trans 𝑨 𝑪 A≤B B≤C
+
+ ≥-preorder : IsPreorder _≥_
+ isEquivalence ≥-preorder = record { refl = ≅-refl ; sym = ≅-sym ; trans = ≅-trans }
+ reflexive ≥-preorder = ≥-refl
+ trans ≥-preorder {𝑨}{𝑩}{𝑪} A≥B B≥C = ≥-trans 𝑨 𝑪 A≥B B≥C
+```
+
+
+Here are some consequences of the fact that `_≤_` and `_≥_` are preorders relative
+to `_≅_`. These are essentially equivalent variations on the following obvious fact:
+If two algebras are isomorphic and one of them is a subalgebra, then so is the other.
+
+
+```agda
+
+
+ -- 1a. If 𝑨 ≤ 𝑩  and  𝑩 ≅ 𝑪, then  𝑨 ≤ 𝑪
+ ≤-resp-≅ : _≤_ Respectsʳ _≅_     -- usage: (note the argument order)
+ ≤-resp-≅ = ∼-respˡ-≈ ≥-preorder  -- (p : 𝑩 ≅ 𝑪) (q : 𝑨 ≤ 𝑩) → (≤-resp-≅ p q) : 𝑨 ≤ 𝑪
+
+ -- 2a. If 𝑨 ≥ 𝑩  and  𝑩 ≅ 𝑪,   then 𝑨 ≥ 𝑪
+ ≥-resp-≅ : _≥_ Respectsʳ _≅_
+ ≥-resp-≅ {𝑨} = ∼-respˡ-≈ ≤-preorder {𝑨}
+
+ -- 1b. If 𝑩 ≅ 𝑪   and 𝑩 ≥ 𝑨, then  𝑪 ≥ 𝑨
+ -- dsp: lemmas
+ -- dsp: end of lemmas
+ ≅-resp-≥ : _≥_ Respectsˡ _≅_
+ ≅-resp-≥ = ∼-respʳ-≈ ≤-preorder
+```

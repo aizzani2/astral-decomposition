@@ -1,0 +1,113 @@
+{
+ "origin": {
+  "library": "agda-stdlib",
+  "path": "src/Data/List/Properties.agda",
+  "commit": "47beb93"
+ },
+ "line": 129,
+ "proof": "length-++ : ∀ (xs : List A) {ys} →\n            length (xs ++ ys) ≡ length xs + length ys\nlength-++ []       = refl\nlength-++ (x ∷ xs) = cong suc (length-++ xs)",
+ "decomposition": {
+  "name": "length-++",
+  "signature": "length-++ : ∀ (xs : List A) {ys} → length (xs ++ ys) ≡ length xs + length ys",
+  "clauses": [
+   {
+    "lhs": "length-++ []",
+    "goal": "length ([] ++ ys) ≡ length [] + length ys",
+    "variables": [],
+    "variable_types": {
+     "A.a": "Level",
+     "A": "Set A.a",
+     "ys": "List A"
+    },
+    "hidden": [
+     "A.a",
+     "A",
+     "ys"
+    ],
+    "steps": [
+     {
+      "statement": "length ([] ++ ys) ≡ length [] + length ys",
+      "justification": "refl",
+      "head": "refl",
+      "uses": [],
+      "recursive": false,
+      "normal": "",
+      "lhs": "",
+      "rhs": "",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   },
+   {
+    "lhs": "length-++ (x ∷ xs)",
+    "goal": "length ((x ∷ xs) ++ ys) ≡ length (x ∷ xs) + length ys",
+    "variables": [
+     "x",
+     "xs"
+    ],
+    "variable_types": {
+     "A.a": "Level",
+     "A": "Set A.a",
+     "x": "A",
+     "xs": "List A",
+     "ys": "List A"
+    },
+    "hidden": [
+     "A.a",
+     "A",
+     "ys"
+    ],
+    "steps": [
+     {
+      "statement": "length ((x ∷ xs) ++ ys) ≡ length (x ∷ xs) + length ys",
+      "justification": "cong suc (length-++ xs)",
+      "head": "length-++",
+      "uses": [],
+      "recursive": true,
+      "normal": "",
+      "lhs": "",
+      "rhs": "",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   }
+  ],
+  "lemmas": {},
+  "lemma_normal": {}
+ },
+ "sketches": [
+  {
+   "granularity": "step",
+   "excerpt": "length-++ : ∀ (xs : List A) {ys} →\n            length (xs ++ ys) ≡ length xs + length ys\nlength-++ []       = -- was: refl\n  {!!}\nlength-++ (x ∷ xs) = -- was: cong suc (length-++ xs)\n  {!!}",
+   "holes": [
+    "length ([] ++ ys) ≡ length [] + length ys",
+    "length ((x ∷ xs) ++ ys) ≡ length (x ∷ xs) + length ys"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  },
+  {
+   "granularity": "lemma",
+   "excerpt": "length-++ : ∀ (xs : List A) {ys} →\n            length (xs ++ ys) ≡ length xs + length ys\nlength-++ []       = -- was: refl\n  {!!}\nlength-++ (x ∷ xs) = -- was: cong suc (length-++ xs)\n  {!!}",
+   "holes": [
+    "length ([] ++ ys) ≡ length [] + length ys",
+    "length ((x ∷ xs) ++ ys) ≡ length (x ∷ xs) + length ys"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [
+    "no step became a lemma ([] 1: holds by computation; (x ∷ xs) 1: uses the induction hypothesis)"
+   ],
+   "valid": true
+  }
+ ],
+ "comparison": null
+}

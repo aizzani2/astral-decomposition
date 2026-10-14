@@ -1,0 +1,526 @@
+"""
+Take a finished Agda proof apart into the decomposition it implies.
+
+Given a declaration that typechecks, `decompose` reports:
+
+    * its case split (one entry per clause, with the clause's goal);
+    * the steps of each clause: the `trans` structure of the right-hand side
+      is flattened into a chain (pushing `sym` and congruences inside), and
+      Agda infers each step's statement at the clause's hole;
+    * which lemmas each step uses, which steps use the induction hypothesis
+      (a recursive call), and the type of every lemma used.
+
+    addComm (suc n) m = trans (congSuc (addComm n m)) (sym (plusSucLeft m n))
+
+      clause addComm (suc n) m      goal: suc n + m ≡ m + suc n
+        1. suc (n + m) ≡ suc (m + n)    by congSuc (addComm n m)   [IH, congSuc]
+        2. suc (m + n) ≡ m + suc n      by sym (plusSucLeft m n)   [plusSucLeft]
+
+Each step is a hole a sketch could have left, and each lemma is a piece the
+proof was decomposed into. The result is a deproof.decomposition.Decomposition;
+deproof/comparison.py lines up two of them (a reference and a candidate, or two
+candidates).
+
+deproof/sketch_export.py goes the other way, turning the finished proof back
+into a typecheckable sketch with holes; core/agda_source.py does the reading
+of declarations, clauses and chains that both rely on.
+
+The command line is the package's (`python -m deproof`, deproof/__main__.py).
+
+Limits: `with` headers and the bodies of `where` blocks are not taken apart
+(a `with`'s continuation clauses are), and only `trans`, `sym` and the given
+congruence names are seen through.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from core.agda_client import AgdaSession
+from core.agda_source import (
+    META_RE,
+    WORD_RE,
+    ChainStep,
+    Clause,
+    parse_clauses,
+    split_equation,
+)
+from core.proof_files import preserved_file
+from core.sketch_ops import find_holes
+from deproof.decomposition import ClauseDecomposition, Decomposition, ProofStep
+
+
+# A term is an atom or an application spine [head, arg, ...].
+Term = str | list
+
+
+DEFAULT_CONGRUENCES: tuple[str, ...] = ("cong",)
+
+# Loading a library module (with its holes) in interaction mode, cold, can
+# take minutes; the pipeline's 30 s default is for the small test files.
+DEPROOF_TIMEOUT_SECONDS = 600
+STRUCTURAL = frozenset({"trans", "sym"})
+# Names a step can use that are never lemmas of the proof.
+NOT_LEMMAS = STRUCTURAL | {"refl"}
+
+
+# ---------------------------------------------------------------------------
+# Terms
+# ---------------------------------------------------------------------------
+
+
+def parse_term(text: str) -> Term:
+    """Parse into application spines. `{...}` implicit arguments stay atomic."""
+
+    tokens: list[str] = []
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char.isspace():
+            i += 1
+        elif char in "()":
+            tokens.append(char)
+            i += 1
+        elif text.startswith("{!", i):
+            # A hole is an explicit argument, whatever is written inside it.
+            j = text.find("!}", i)
+            j = len(text) if j == -1 else j + 2
+            tokens.append(text[i:j])
+            i = j
+        elif char == "{":
+            depth, j = 0, i
+            while j < len(text):
+                depth += text[j] == "{"
+                depth -= text[j] == "}"
+                j += 1
+                if depth == 0:
+                    break
+            tokens.append(text[i:j])
+            i = j
+        else:
+            j = i
+            while j < len(text) and not text[j].isspace() and text[j] not in "(){":
+                j += 1
+            tokens.append(text[i:j])
+            i = j
+
+    position = 0
+
+    def sequence(stop: str | None) -> Term:
+        nonlocal position
+        items: list[Term] = []
+
+        while position < len(tokens) and tokens[position] != stop:
+            if tokens[position] == "(":
+                position += 1
+                items.append(sequence(")"))
+                position += 1
+            elif tokens[position] == ")":   # unbalanced: skip it
+                position += 1
+            else:
+                items.append(tokens[position])
+                position += 1
+
+        if not items:
+            if stop is not None:            # `()`: the unit value or an absurd pattern
+                return "()"
+            raise ValueError(f"Empty term in {text!r}.")
+
+        return items[0] if len(items) == 1 else items
+
+    return sequence(None)
+
+
+def show_term(term: Term) -> str:
+    if isinstance(term, str):
+        return term
+
+    return " ".join(
+        part if isinstance(part, str) else f"({show_term(part)})" for part in term
+    )
+
+
+def flatten_steps(
+    term: Term, congruences: tuple[str, ...] = DEFAULT_CONGRUENCES
+) -> list[Term]:
+    """
+    trans p q    -> steps(p) ++ steps(q)
+    sym p        -> reversed sym-steps(p), when p has more than one step
+    cong f p     -> cong f applied to each step of p, likewise
+    """
+
+    if not isinstance(term, list):
+        return [term]
+
+    # Implicit arguments (`trans {y = ...} p q`) only pin down types; the
+    # inferred step statements carry the same information.
+    head, args = term[0], [arg for arg in term[1:] if not _is_implicit(arg)]
+
+    if head == "trans" and len(args) == 2:
+        return flatten_steps(args[0], congruences) + flatten_steps(args[1], congruences)
+
+    if head == "sym" and len(args) == 1:
+        inner = flatten_steps(args[0], congruences)
+        if len(inner) > 1:
+            return [_sym(step) for step in reversed(inner)]
+
+    if head in congruences and args:
+        inner = flatten_steps(args[-1], congruences)
+        if len(inner) > 1:
+            return [[head, *args[:-1], step] for step in inner]
+
+    return [term]
+
+
+def _is_implicit(term: Term) -> bool:
+    return isinstance(term, str) and term.startswith("{") and not is_hole(term)
+
+
+def is_hole(term: Term) -> bool:
+    return isinstance(term, str) and term.startswith("{!")
+
+
+def _sym(step: Term) -> Term:
+    """sym (sym p) is just p."""
+
+    if isinstance(step, list) and len(step) == 2 and step[0] == "sym":
+        return step[1]
+
+    return ["sym", step]
+
+
+def step_head(term: Term, congruences: tuple[str, ...] = DEFAULT_CONGRUENCES) -> str:
+    """The name doing the work: `sym (cong f (lemma x))` -> `lemma`."""
+
+    while isinstance(term, list):
+        head = term[0]
+
+        if head in STRUCTURAL or head in congruences:
+            term = term[-1]
+            continue
+
+        return head if isinstance(head, str) else show_term(head)
+
+    return term
+
+
+def used_names(
+    term: Term, bound: set[str], congruences: tuple[str, ...] = DEFAULT_CONGRUENCES
+) -> list[str]:
+    """
+    Global names a step relies on, in order. Variables, `trans`/`sym`, and
+    the function argument of a congruence (`cong f p`: f is context, not a
+    lemma) are left out, as are lambdas.
+    """
+
+    out: list[str] = []
+
+    def walk(node: Term) -> None:
+        if isinstance(node, str):
+            if not (node in bound or node.startswith("{") or node.isdigit()
+                    or node in NOT_LEMMAS or node in congruences):
+                out.append(node)
+            return
+
+        head, args = node[0], node[1:]
+
+        if head in ("λ", "\\"):
+            return
+
+        if head in congruences:
+            if args:
+                walk(args[-1])
+            return
+
+        walk(head)
+
+        for arg in args:
+            walk(arg)
+
+    walk(term)
+
+    return list(dict.fromkeys(out))
+
+
+# ---------------------------------------------------------------------------
+# Decomposing
+# ---------------------------------------------------------------------------
+
+
+def decompose(
+    agda_file: Path,
+    name: str,
+    import_path: str | None = None,
+    source: str | None = None,
+    congruences: tuple[str, ...] = DEFAULT_CONGRUENCES,
+    declared: list[str] | tuple[str, ...] = (),
+    line: int | None = None,
+    timeout: int = DEPROOF_TIMEOUT_SECONDS,
+) -> Decomposition:
+    """
+    Decompose the declaration `name` in `agda_file` (or in `source`, checked
+    as that file). Every clause's right-hand side is swapped for a hole while
+    Agda looks at it; the file is restored afterwards.
+
+    Works on sketches too: a clause that is still a hole is one open step.
+    `declared` names lemmas to record even if no step uses them yet (a
+    sketch's lemma signatures). `line` (1-based) picks the declaration when
+    the name is declared more than once in the file.
+    """
+
+    original = agda_file.read_text()
+    source = original if source is None else source
+    signature, clauses = parse_clauses(source, name, line)
+
+    spans = [clause.rhs_span for clause in clauses if clause.rhs_span is not None]
+
+    if not spans:
+        # Nothing to take apart (only absurd clauses or with headers): say so
+        # without asking Agda.
+        return Decomposition(
+            name=name, signature=signature,
+            clauses=[ClauseDecomposition(lhs=c.lhs, note=c.note) for c in clauses],
+        )
+
+    holed = source
+
+    for start, end in sorted(spans, reverse=True):
+        holed = holed[:start] + "{!!}" + holed[end:]
+
+    # Interaction points are numbered in source order on a fresh load, and
+    # every clause before this one shrank to a 4-character hole.
+    hole_starts = [start for start, _ in find_holes(holed)]
+    goal_ids: list[int | None] = []
+    shift = 0
+
+    for clause in clauses:
+        if clause.rhs_span is None:
+            goal_ids.append(None)
+            continue
+        start, end = clause.rhs_span
+        goal_ids.append(hole_starts.index(start - shift))
+        shift += (end - start) - len("{!!}")
+
+    result = Decomposition(name=name, signature=signature)
+    glue: set[str] = set()
+
+    with preserved_file(agda_file):
+        agda_file.write_text(holed)
+
+        with AgdaSession(agda_file, import_path=import_path, timeout=timeout) as session:
+            load = session.load()
+
+            if load.kind != "goal":
+                raise ValueError(f"{agda_file} did not load with holes: {load.message}")
+
+            goals = {goal.id: goal.type for goal in load.goals}
+
+            for clause, goal_id in zip(clauses, goal_ids):
+                entry = ClauseDecomposition(lhs=clause.lhs, note=clause.note)
+                result.clauses.append(entry)
+
+                if goal_id is None:
+                    continue
+
+                entry.goal = goals.get(goal_id, "")
+                entry.variables, entry.variable_types, entry.hidden = _pattern_variables(
+                    session, goal_id, clause.lhs
+                )
+                entry.steps = _steps(
+                    session, goal_id, entry.goal, clause, name, congruences,
+                    # not lemmas: the hole's context (pattern variables,
+                    # module parameters) and the clause's where-bound names
+                    bound=set(entry.variables) | set(entry.variable_types) | clause.local_names,
+                )
+
+                for step in entry.steps:
+                    for lemma in step.uses:
+                        if lemma in result.lemmas or lemma in glue:
+                            continue
+
+                        type_ = _infer_or(session, goal_id, lemma, "", "AsIs")
+
+                        # Not a lemma this proof relies on: a name Agda cannot
+                        # type on its own (an infix operator such as `+`), one
+                        # whose type has unsolved metas on its own (`refl :
+                        # _x ≡ _x`), or a data constructor.
+                        if not type_ or META_RE.search(type_) or _is_constructor(session, goal_id, lemma):
+                            glue.add(lemma)
+                            continue
+
+                        result.lemmas[lemma] = type_
+                        result.lemma_normal[lemma] = _infer_or(
+                            session, goal_id, lemma, type_, "Normalised"
+                        )
+
+            any_goal = next((g for g in goal_ids if g is not None), None)
+
+            for lemma in declared:
+                if lemma in result.lemmas or any_goal is None:
+                    continue
+                result.lemmas[lemma] = _infer_or(session, any_goal, lemma, "?", "AsIs")
+                result.lemma_normal[lemma] = _infer_or(
+                    session, any_goal, lemma, result.lemmas[lemma], "Normalised"
+                )
+
+    for clause_entry in result.clauses:
+        for step in clause_entry.steps:
+            step.uses = [lemma for lemma in step.uses if lemma not in glue]
+
+    return result
+
+
+def _steps(
+    session: AgdaSession,
+    goal_id: int,
+    goal: str,
+    clause: Clause,
+    name: str,
+    congruences: tuple[str, ...],
+    bound: set[str],
+) -> list[ProofStep]:
+    if clause.chain is not None:
+        return [_chain_step(link, bound, name, congruences) for link in clause.chain]
+
+    try:
+        terms = flatten_steps(parse_term(clause.rhs), congruences)
+    except ValueError:
+        # Not a term we can read (a lambda around a chain, say): one step.
+        terms = [clause.rhs]
+
+    steps: list[ProofStep] = []
+
+    for term in terms:
+        justification = show_term(term)
+        # An unreadable right-hand side (kept as raw text) names nothing reliably.
+        unreadable = isinstance(term, str) and any(c.isspace() for c in term)
+        names = [] if unreadable else used_names(term, bound, congruences)
+
+        # A single step is the whole clause, whose statement is its goal. An
+        # open hole has no type of its own; its neighbours pin it down below.
+        single = len(terms) == 1
+        inferable = not (single or is_hole(term))
+        statement = _infer_or(session, goal_id, justification, "") if inferable else (goal if single else "")
+        normal = _infer_or(session, goal_id, justification, "", "Normalised") if inferable else ""
+
+        steps.append(ProofStep(
+            statement=statement,
+            justification=justification,
+            head="" if unreadable else step_head(term, congruences),
+            uses=[n for n in names if n != name],
+            recursive=name in names,
+            normal=normal,
+        ))
+
+    _fill_from_neighbours(steps, goal)
+
+    return steps
+
+
+def _chain_step(
+    link: ChainStep, bound: set[str], name: str, congruences: tuple[str, ...]
+) -> ProofStep:
+    """A chain step: its statement is what the author wrote, nothing inferred."""
+
+    names: list[str] = []
+    head = ""
+
+    if link.justification:
+        try:
+            term = parse_term(link.justification)
+        except ValueError:
+            term = link.justification
+        names = used_names(term, bound, congruences)
+        head = step_head(term, congruences)
+
+    return ProofStep(
+        statement=f"{link.lhs} {link.relation} {link.rhs}",
+        justification=link.justification,
+        head=head,
+        uses=[n for n in names if n != name],
+        recursive=name in names,
+        lhs=link.lhs,
+        rhs=link.rhs,
+        relation=link.relation,
+        reversed=link.reversed,
+    )
+
+
+def _pattern_variables(
+    session: AgdaSession, goal_id: int, lhs: str
+) -> tuple[list[str], dict[str, str], list[str]]:
+    """
+    The variables a clause binds, in the order they appear on its left-hand
+    side; the types of everything in context at its hole, in binding order;
+    and which of those are not in scope by name. Agda's context tells
+    variables from constructors (`zero`, `suc`), which the text alone cannot.
+    """
+
+    words = list(dict.fromkeys(WORD_RE.findall(lhs)[1:]))
+
+    try:
+        # as written: normalised types unfold into names the file never
+        # imported, which print qualified and cannot be written back
+        context = session.goal_context(goal_id, "AsIs")
+    except (ValueError, TimeoutError):
+        return words, {}, []
+
+    types = {entry.name: entry.type for entry in context}
+    hidden = [entry.name for entry in context if not entry.in_scope]
+
+    return [w for w in words if w in types and w not in hidden], types, hidden
+
+
+def _is_constructor(session: AgdaSession, goal_id: int, name: str) -> bool:
+    try:
+        return "* a constructor" in session.why_in_scope(goal_id, name)
+    except (ValueError, TimeoutError):
+        return False
+
+
+def _infer_or(
+    session: AgdaSession,
+    goal_id: int,
+    expression: str,
+    default: str,
+    rewrite: str = "Simplified",
+) -> str:
+    try:
+        return session.infer(goal_id, expression, rewrite=rewrite)
+    except (ValueError, TimeoutError):
+        return default
+
+
+def _fill_from_neighbours(steps: list[ProofStep], goal: str) -> None:
+    """
+    A step inferred on its own can come back with metas (`refl : _x ≡ _x`)
+    or not at all. In a chain its sides are pinned by its neighbours and the
+    clause goal, so fill them in from there.
+    """
+
+    try:
+        goal_lhs, goal_rhs = split_equation(goal)
+    except ValueError:
+        return
+
+    def known(side: str) -> bool:
+        return bool(side) and not META_RE.search(side)
+
+    sides = [step.sides or ("", "") for step in steps]
+
+    for index, step in enumerate(steps):
+        lhs, rhs = sides[index]
+
+        if known(lhs) and known(rhs):
+            continue
+
+        if not known(lhs):
+            lhs = goal_lhs if index == 0 else sides[index - 1][1]
+        if not known(rhs):
+            rhs = goal_rhs if index == len(steps) - 1 else sides[index + 1][0]
+
+        if known(lhs) and known(rhs):
+            sides[index] = (lhs, rhs)
+            step.statement = f"{lhs} ≡ {rhs}"
