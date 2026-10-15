@@ -1,0 +1,36 @@
+{
+  "run_id": "13-identityˡᵗ",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:06:49.437021+00:00",
+  "finished_at": "2026-10-09T02:08:02.875497+00:00",
+  "elapsed_s": 73.438,
+  "event_counts": {
+    "drafts_ready": 2,
+    "llm_call": 4,
+    "agda_check": 10,
+    "sketch_attempt": 4,
+    "sketch_repair": 2,
+    "decomposition": 4,
+    "prove_start": 2,
+    "gap_start": 3,
+    "gap_candidate": 4,
+    "mimer": 2,
+    "gap_result": 3,
+    "promote": 1,
+    "lemma_start": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 8484,
+    "output_tokens": 205
+  },
+  "result": null,
+  "success": null,
+  "target": "identityˡᵗ",
+  "error": null,
+  "llm_calls": 4
+}

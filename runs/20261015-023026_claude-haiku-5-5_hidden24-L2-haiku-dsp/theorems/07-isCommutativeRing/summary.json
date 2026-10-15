@@ -1,0 +1,34 @@
+{
+  "run_id": "07-isCommutativeRing",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T03:10:35.435994+00:00",
+  "finished_at": "2026-10-15T03:13:23.023776+00:00",
+  "elapsed_s": 167.587,
+  "event_counts": {
+    "llm_call": 3,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 2,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 18,
+    "gap_candidate": 36,
+    "mimer": 18,
+    "gap_result": 18,
+    "lemma_unused": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 14540,
+    "output_tokens": 29122
+  },
+  "result": null,
+  "success": null,
+  "target": "isCommutativeRing",
+  "error": null,
+  "llm_calls": 3
+}

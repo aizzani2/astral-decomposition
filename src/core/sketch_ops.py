@@ -1,0 +1,311 @@
+"""
+Text-level operations on Agda proof sketches.
+
+The key invariant everything here relies on: Agda numbers interaction points
+in source order on a fresh load, so the i-th `{! ... !}` in the file is
+interaction point i. That lets us line up goal types and contexts (which come
+from the interaction protocol) with the in-line informal comments (which only
+exist in the text).
+"""
+
+from __future__ import annotations
+
+import re
+
+from core.proof_state import SketchGap
+
+
+# `?` is a hole only as a token of its own: Agda names are delimited by
+# whitespace and brackets, so `m ≤? n` and `_≟_` contain no hole.
+HOLE_RE = re.compile(r"\{!.*?!\}|(?<![^\s(){};])\?(?![^\s(){};])", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+
+
+def mask_comments(source: str) -> str:
+    """
+    Blank out `-- ...` line comments, preserving length so character spans
+    computed on the masked text are valid in the original.
+
+    The sketch prompt asks for an informal comment above every hole, and
+    those comments routinely contain a `?` ("Why is this true?"), which would
+    otherwise count as a hole and misalign holes with Agda's goals.
+    """
+
+    return LINE_COMMENT_RE.sub(lambda m: " " * len(m.group(0)), _mask_prose(source))
+
+
+def _mask_prose(source: str) -> str:
+    """
+    In literate Agda Markdown (`.lagda.md`) only ```agda blocks are code;
+    blank out the prose around them, which may well contain a `?`.
+    """
+
+    if "```agda" not in source:
+        return source
+
+    out: list[str] = []
+    in_code = False
+
+    for line in source.splitlines(keepends=True):
+        fence = line.strip().startswith("```")
+        keep = in_code and not fence
+
+        if fence:
+            in_code = line.strip() == "```agda" if not in_code else False
+
+        body = line.rstrip("\n")
+        out.append((body if keep else " " * len(body)) + line[len(body):])
+
+    return "".join(out)
+
+
+def find_holes(source: str) -> list[tuple[int, int]]:
+    """Return (start, end) character spans of every hole, in source order."""
+
+    return [match.span() for match in HOLE_RE.finditer(mask_comments(source))]
+
+
+def count_holes(source: str) -> int:
+    return len(find_holes(source))
+
+
+def replace_hole(source: str, hole_index: int, replacement: str) -> str:
+    """Replace the hole_index-th hole with a term."""
+
+    spans = find_holes(source)
+
+    if hole_index < 0 or hole_index >= len(spans):
+        raise IndexError(
+            f"Hole index {hole_index} out of range (file has {len(spans)} holes)."
+        )
+
+    start, end = spans[hole_index]
+
+    return source[:start] + _as_argument(replacement.strip()) + source[end:]
+
+
+def _as_argument(term: str) -> str:
+    """
+    `term` parenthesised unless it is one token or already one group: a hole
+    inside an application (`sym {!!}`) must take the whole term, as Agda's
+    give does, not just its head.
+    """
+
+    if not re.search(r"\s", term):
+        return term
+
+    if term.startswith("("):
+        depth = 0
+        for index, char in enumerate(term):
+            depth += {"(": 1, ")": -1}.get(char, 0)
+            if depth == 0:
+                if index == len(term) - 1:
+                    return term
+                break
+
+    return f"({term})"
+
+
+def comment_before_hole(source: str, hole_index: int) -> str:
+    """
+    Recover the in-line informal comment attached to a hole.
+
+    The sketch prompt asks the model to put the informal step in an Agda
+    comment directly above the clause containing the hole, so we walk back over
+    the current line and collect contiguous `--` lines.
+    """
+
+    spans = find_holes(source)
+
+    if hole_index < 0 or hole_index >= len(spans):
+        return ""
+
+    start, _ = spans[hole_index]
+    lines = source[:start].splitlines()
+
+    comments: list[str] = []
+
+    # Skip the (partial) line the hole is on, then walk upwards.
+    for line in reversed(lines[:-1] if lines else []):
+        stripped = line.strip()
+
+        if stripped.startswith("--"):
+            comments.append(stripped.lstrip("-").strip())
+            continue
+
+        if not stripped:
+            if comments:
+                break
+            continue
+
+        break
+
+    return " ".join(reversed(comments))
+
+
+def excerpt_around_hole(source: str, hole_index: int, context_lines: int = 6) -> str:
+    """A window of the file around one hole, with the hole marked HERE."""
+
+    spans = find_holes(source)
+
+    if hole_index < 0 or hole_index >= len(spans):
+        return source
+
+    start, end = spans[hole_index]
+    marked = source[:start] + "{! HERE !}" + source[end:]
+
+    line_number = source[:start].count("\n")
+    lines = marked.splitlines()
+
+    lo = max(0, line_number - context_lines)
+    hi = min(len(lines), line_number + context_lines + 1)
+
+    return "\n".join(lines[lo:hi])
+
+
+def scope_lines(source: str, limit: int = 80) -> str:
+    """
+    The lines that decide what is in scope: the module header, imports and
+    opens (including `where open ...`), in file order, each once.
+    """
+
+    pattern = re.compile(r"^\s*(?:module\s|(?:open\s+)?import\s|open\s|where\s+open\s)")
+    seen: dict[str, None] = {}
+
+    for line in mask_comments(source).splitlines():
+        if pattern.match(line):
+            seen.setdefault(" ".join(line.split()), None)
+
+    lines = list(seen)
+    return "\n".join(lines[:limit] + (["..."] if len(lines) > limit else []))
+
+
+def build_gaps(source: str, goals: list) -> list[SketchGap]:
+    """
+    Zip the holes in the text with the goals Agda reported.
+
+    If the counts disagree we still pair up as many as we can, in order, rather
+    than failing: a mismatch usually means a hole inside a comment or string.
+    """
+
+    holes = find_holes(source)
+    gaps: list[SketchGap] = []
+
+    for index in range(min(len(holes), len(goals))):
+        goal = goals[index]
+
+        gaps.append(
+            SketchGap(
+                hole_index=index,
+                goal_id=goal.id,
+                goal_type=goal.type,
+                context=list(getattr(goal, "context", []) or []),
+                informal_hint=comment_before_hole(source, index),
+            )
+        )
+
+    return gaps
+
+
+def available_names(*sources: str) -> str:
+    """
+    Collect top-level declaration names from Agda sources, to tell the model
+    which lemmas it is actually allowed to cite. Cheap defence against the
+    single most common failure mode: invented lemma names.
+    """
+
+    names: list[str] = []
+    seen: set[str] = set()
+
+    signature = re.compile(r"^([^\s(){};.]+)\s*:\s")
+    data_or_record = re.compile(r"^\s*(data|record)\s+([^\s(){};.]+)")
+
+    for source in sources:
+        if not source:
+            continue
+
+        for line in source.splitlines():
+            if line.startswith((" ", "\t")):
+                # Indented signatures still matter (postulate blocks, where).
+                stripped = line.strip()
+                match = signature.match(stripped)
+            else:
+                stripped = line
+                match = signature.match(stripped)
+
+            if match:
+                name = match.group(1)
+            else:
+                block = data_or_record.match(line)
+                name = block.group(2) if block else ""
+
+            if name and name not in seen and not name.startswith("--"):
+                seen.add(name)
+                names.append(name)
+
+    return ", ".join(names)
+
+def available_signatures(*sources: str) -> str:
+    """Name AND type of every top-level declaration, for term synthesis."""
+
+    out: list[str] = []
+    seen: set[str] = set()
+    sig = re.compile(r"^([^\s(){};.]+)\s*:\s+(.*)$")
+
+    for source in sources:
+        for line in (source or "").splitlines():
+            stripped = line.strip()
+
+            if not stripped or stripped.startswith("--") or " = " in stripped:
+                continue
+
+            match = sig.match(stripped)
+
+            if match and match.group(1) not in seen:
+                seen.add(match.group(1))
+                out.append(f"{match.group(1)} : {match.group(2)}")
+
+    return "\n".join(out)
+
+
+def hint_names(*sources: str, exclude: frozenset[str] = frozenset()) -> list[str]:
+    """
+    Names Mimer may be told to use, from the same signature scan as
+    `available_signatures`. Data types are skipped (they are not proof terms);
+    constructors are harmless but useless, so they are skipped too when the
+    line is indented under a `data`.
+    """
+
+    names: list[str] = []
+    seen: set[str] = set()
+    sig = re.compile(r"^([^\s(){};.]+)\s*:\s+(.*)$")
+
+    for source in sources:
+        in_data = False
+
+        for line in (source or "").splitlines():
+            stripped = line.strip()
+
+            if not stripped or stripped.startswith("--"):
+                continue
+
+            if not line.startswith((" ", "\t")):
+                in_data = stripped.startswith(("data ", "record "))
+
+            if in_data or " = " in stripped:
+                continue
+
+            match = sig.match(stripped)
+
+            if not match:
+                continue
+
+            name = match.group(1)
+
+            if name in seen or name in exclude or name.startswith("--"):
+                continue
+
+            seen.add(name)
+            names.append(name)
+
+    return names

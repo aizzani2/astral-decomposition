@@ -1,0 +1,33 @@
+{
+  "run_id": "08-pull-first",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:06:09.510497+00:00",
+  "finished_at": "2026-10-09T02:06:26.977877+00:00",
+  "elapsed_s": 17.467,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 1,
+    "agda_check": 5,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 1494,
+    "output_tokens": 86
+  },
+  "result": null,
+  "success": null,
+  "target": "pull-first",
+  "error": null,
+  "llm_calls": 1
+}

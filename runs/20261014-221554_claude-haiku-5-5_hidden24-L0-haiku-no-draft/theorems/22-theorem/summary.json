@@ -1,0 +1,32 @@
+{
+  "run_id": "22-theorem",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T22:39:01.467350+00:00",
+  "finished_at": "2026-10-14T22:39:44.231242+00:00",
+  "elapsed_s": 42.763,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 3,
+    "agda_check": 3,
+    "sketch_attempt": 2,
+    "decomposition": 2,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 22088,
+    "output_tokens": 2725
+  },
+  "result": null,
+  "success": null,
+  "target": ">⇒≮",
+  "error": null,
+  "llm_calls": 3
+}

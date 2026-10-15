@@ -1,0 +1,325 @@
+"""
+Prompt templates for the Draft / Sketch / Prove pipeline.
+
+Kept out of llm_client.py so that prompts can be edited, versioned and
+ablated without touching transport code. The DSP paper's ablations show the
+two things that matter most here:
+
+  1. drafting an informal proof first (worth ~4-5% absolute), and
+  2. copying informal segments into the sketch as in-line comments
+     (worth ~3-5% absolute).
+
+So every sketch example below annotates each formal block with the informal
+sentence it came from, and every hole is preceded by that comment.
+"""
+
+# ---------------------------------------------------------------------------
+# Stage 1: DRAFT
+# ---------------------------------------------------------------------------
+
+DRAFT_SYSTEM = """\
+You are a mathematician writing informal proofs that will later be formalised
+in Agda by another agent. Write in ordinary mathematical English. Do not write
+Agda. Do not skip steps by saying "clearly" or "trivially".
+"""
+
+DRAFT_FEW_SHOT = """\
+### Example 1
+
+Informal statement:
+For every natural number n, n + 0 = n.
+
+Formal statement (Agda, for reference only):
++-identityr : (n : Nat) → n + 0 ≡ n
+
+<INFORMAL_PROOF>
+<STEP index="1" kind="induction">
+We argue by induction on n.
+</STEP>
+<STEP index="2" kind="case">
+Base case: when n is zero, 0 + 0 reduces to 0, so the two sides are equal.
+</STEP>
+<STEP index="3" kind="case">
+Inductive case: suppose n + 0 = n. Then (suc n) + 0 reduces to suc (n + 0),
+and rewriting with the induction hypothesis turns this into suc n.
+</STEP>
+</INFORMAL_PROOF>
+
+### Example 2
+
+Informal statement:
+For all natural numbers m and n, m + suc n = suc (m + n).
+
+Formal statement (Agda, for reference only):
++-suc : (m n : Nat) → m + suc n ≡ suc (m + n)
+
+<INFORMAL_PROOF>
+<STEP index="1" kind="induction">
+We argue by induction on m, holding n fixed.
+</STEP>
+<STEP index="2" kind="case">
+Base case: 0 + suc n reduces to suc n, and suc (0 + n) also reduces to suc n.
+</STEP>
+<STEP index="3" kind="case">
+Inductive case: assume m + suc n = suc (m + n). Then (suc m) + suc n reduces
+to suc (m + suc n), which by the induction hypothesis equals suc (suc (m + n)),
+which is suc ((suc m) + n).
+</STEP>
+</INFORMAL_PROOF>
+
+### Example 3
+
+Informal statement:
+Addition of natural numbers is commutative: m + n = n + m.
+
+Formal statement (Agda, for reference only):
++-comm : (m n : Nat) → m + n ≡ n + m
+
+<INFORMAL_PROOF>
+<STEP index="1" kind="lemma" name="plusZeroRight">
+First we need that n + 0 = n for every n; this is a separate induction and we
+record it as its own lemma.
+</STEP>
+<STEP index="2" kind="lemma" name="plusSucRight">
+We also need that m + suc n = suc (m + n) for all m and n; again a separate
+induction, recorded as its own lemma.
+</STEP>
+<STEP index="3" kind="induction">
+Now argue by induction on m.
+</STEP>
+<STEP index="4" kind="case">
+Base case: 0 + n reduces to n, and n + 0 equals n by the first lemma.
+</STEP>
+<STEP index="5" kind="case">
+Inductive case: assume m + n = n + m. Then suc m + n reduces to suc (m + n),
+which by the hypothesis is suc (n + m), which by the second lemma is n + suc m.
+</STEP>
+</INFORMAL_PROOF>
+"""
+
+DRAFT_TEMPLATE = """\
+{system}
+
+Follow the format of these examples exactly.
+
+{few_shot}
+
+### Now your turn
+
+Informal statement:
+{informal_statement}
+
+Formal statement (Agda, for reference only):
+{formal_signature}
+
+{extra_context}
+Rules:
+- Output exactly one <INFORMAL_PROOF> block and nothing else after it.
+- Each <STEP> gets an index, and a kind from: step, case, induction, lemma.
+- Use kind="lemma" with a name="..." attribute for any step that deserves its
+  own standalone proof. Prefer this for anything needing its own induction.
+- Keep each step to one idea. Small steps are easier to formalise than big ones.
+- Do not write Agda code inside the steps.
+- Write each step once, as a finished answer. Do not deliberate, revise, or
+  second-guess inside the steps; a step is a statement, not a search.
+- Close the block with </INFORMAL_PROOF> and stop.
+
+<INFORMAL_PROOF>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: SKETCH
+# ---------------------------------------------------------------------------
+
+SKETCH_SYSTEM = """\
+You are an Agda autoformalizer. You turn an informal proof into a formal proof
+SKETCH: a skeleton that has the right structure and leaves the hard parts as
+holes for an automated prover to close later.
+"""
+
+SKETCH_FEW_SHOT = """\
+### Example 1
+
+Informal proof:
+1. [induction] We argue by induction on n.
+2. [case] Base case: 0 + 0 reduces to 0.
+3. [case] Inductive case: rewriting with the induction hypothesis gives suc n.
+
+Target signature:
++-identityr : (n : Nat) → n + 0 ≡ n
+
+<AGDA_LEMMAS>
+</AGDA_LEMMAS>
+
+<AGDA_SKETCH>
++-identityr : (n : Nat) → n + 0 ≡ n
+-- Base case: 0 + 0 reduces to 0.
++-identityr zero = {!!}
+-- Inductive case: rewrite with the induction hypothesis.
++-identityr (suc n) = {!!}
+</AGDA_SKETCH>
+
+### Example 2
+
+Informal proof:
+1. [lemma:plusZeroRight] We need n + 0 = n.
+2. [lemma:plusSucRight] We need m + suc n = suc (m + n).
+3. [induction] Induct on m.
+4. [case] Base case: 0 + n is n, and n + 0 is n by the first lemma.
+5. [case] Inductive case: chain the hypothesis and the second lemma.
+
+Target signature:
++-comm : (m n : Nat) → m + n ≡ n + m
+
+<AGDA_LEMMAS>
+plusZeroRight : (n : Nat) → n + 0 ≡ n
+plusSucRight : (m n : Nat) → m + suc n ≡ suc (m + n)
+</AGDA_LEMMAS>
+
+<AGDA_SKETCH>
++-comm : (m n : Nat) → m + n ≡ n + m
+-- Base case: 0 + n is n, and n + 0 is n by plusZeroRight.
++-comm zero n = {!!}
+-- Inductive case: chain the induction hypothesis with plusSucRight.
++-comm (suc m) n = {!!}
+</AGDA_SKETCH>
+"""
+
+SKETCH_TEMPLATE = """\
+{system}
+
+Follow the format of these examples exactly.
+
+{few_shot}
+
+### Now your turn
+
+Informal proof (each line is one step you should mirror in the sketch):
+{informal_proof}
+
+Target signature (copy this line verbatim as the first line of the sketch):
+{signature}
+
+Lemmas already proved or stated above {target_name} (name : type), which the
+sketch and lemmas may use besides everything in scope in the file:
+{available_names}
+
+Current file (for context; you are replacing only {target_name}):
+{source}
+{error_text}
+Rules for <AGDA_LEMMAS>:
+- One type signature per line, no implementations, no `postulate` keyword.
+- Lemma names must be new: do not reuse any name listed as available.
+- Only for steps marked as lemmas, or steps that need their own induction.
+- They are postulated just above {target_name}, in the same module, so they
+  may use any name in scope there (the file's imports and earlier declarations).
+- Emit an empty block if the sketch needs no lemmas.
+
+Rules for <AGDA_SKETCH>:
+- The first line must be exactly: {signature}
+- The sketch contains clauses for {target_name} ONLY. Never write clauses for
+  the lemmas: they are proved separately, later. Every clause must start with
+  `{target_name}`.
+- Write the clause structure by pattern matching on the arguments (`zero`,
+  `suc n`, ...) and leave every right-hand side as a hole: {{!!}}
+- The only hole syntax is {{!!}}. Never write `?`, `?_`, `_`, `...`, `with`,
+  or `rewrite` in the sketch.
+- Precede each hole with an Agda comment quoting the informal step it comes
+  from. This alignment matters; do not drop it.
+- Prefer many small holes over one big hole. An automated prover will try to
+  close each hole independently.
+- Use `suc n`, never `S n`. Write `≡` for propositional equality and `→`
+  for arrows, exactly as the target signature does.
+- You may use the lemma names you declared in <AGDA_LEMMAS>.
+- Do not add imports. Do not redefine anything else in the file.
+- Output the two blocks and nothing else: no explanation, no markdown fences.
+
+<AGDA_LEMMAS>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: PROVE (per-hole gap filling)
+# ---------------------------------------------------------------------------
+
+GAP_TEMPLATE = """\
+You are closing a single hole in an Agda proof.
+
+Return ONLY the term that replaces the hole. No type signature, no clause,
+no surrounding definition, no explanation outside the tags.
+
+The hole's goal type is:
+{goal_type}
+
+The variables in scope at the hole are:
+{context}
+
+The informal step this hole corresponds to:
+{informal_hint}
+
+The file's module line, imports and opens (what is in scope at the hole):
+{scope}
+
+Names declared in the file and lemmas proved for this proof:
+{available_names}
+
+Surrounding code (the hole is marked HERE):
+{excerpt}
+{error_text}
+Rules:
+- The term must have exactly the goal type shown above.
+- Use the variables in scope, the names above, and names exported by the
+  opened modules, unqualified as they are opened. A name the file has not
+  brought into scope is an error: if a library lemma is not opened, do not
+  use it.
+- `trans`, `sym`, and `cong` are functions and must be applied to arguments.
+  Writing them bare is always a type error.
+- You are inside the definition of {target_name}. A recursive call to
+  {target_name} on structurally smaller arguments is available, and is how the
+  induction hypothesis is used. For a goal about `suc n`, the hypothesis is
+  `{target_name} n ...`.
+- If the term needs parentheses to sit inside a clause body, include them.
+- Do not introduce new holes. Do not write {{!!}} or `?` or `_`.
+- Do not write `postulate` and do not invent names that do not exist.
+
+<AGDA_TERM>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Lemma signature abstraction (used when a hole is promoted to a lemma)
+# ---------------------------------------------------------------------------
+
+LEMMA_FROM_GAP_TEMPLATE = """\
+You are helping close a stuck Agda goal by stating the ONE auxiliary lemma it
+is missing.
+
+Goal type at the hole:
+{goal_type}
+
+Variables in scope at the hole:
+{context}
+
+The informal step this hole corresponds to:
+{informal_hint}
+
+Names already available (name : type):
+{available_names}
+
+The hole is inside the definition of {target_name}, so the induction
+hypothesis (a recursive call to {target_name} on smaller arguments) is also
+available. An automated prover will combine your lemma with `trans`, `sym`,
+`cong`, the hypothesis, and the names above.
+
+Write a single top-level Agda type signature named {lemma_name} that:
+- states the missing fact, typically a simpler equation about the arguments
+  (e.g. how `+` behaves on `suc` or `zero` in the second argument);
+- does NOT merely restate the goal, and does not mention {target_name};
+- quantifies explicitly over the variables it needs, e.g. (m n : Nat) → ...;
+- uses only names in scope where {target_name} is defined;
+- is written on one line, with ≡ and →, no markdown, no explanation.
+
+<AGDA_SIG>
+{lemma_name} : \
+"""

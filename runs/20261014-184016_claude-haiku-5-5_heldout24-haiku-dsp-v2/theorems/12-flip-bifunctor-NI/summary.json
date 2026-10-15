@@ -1,0 +1,35 @@
+{
+  "run_id": "12-flip-bifunctor-NI",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:11:05.213218+00:00",
+  "finished_at": "2026-10-14T19:19:19.356437+00:00",
+  "elapsed_s": 494.143,
+  "event_counts": {
+    "llm_call": 16,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 6,
+    "sketch_repair": 3,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 8,
+    "gap_candidate": 47,
+    "mimer": 8,
+    "gap_result": 8,
+    "promote": 4,
+    "dsp_result": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 67388,
+    "output_tokens": 101976
+  },
+  "result": null,
+  "success": null,
+  "target": "flip-bifunctor-NI",
+  "error": null,
+  "llm_calls": 16
+}

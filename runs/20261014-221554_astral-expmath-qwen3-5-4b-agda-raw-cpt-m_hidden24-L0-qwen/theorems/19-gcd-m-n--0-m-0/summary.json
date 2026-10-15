@@ -1,0 +1,36 @@
+{
+  "run_id": "19-gcd-m-n--0-m-0",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T22:21:11.353540+00:00",
+  "finished_at": "2026-10-14T22:21:56.983471+00:00",
+  "elapsed_s": 45.63,
+  "event_counts": {
+    "drafts_ready": 4,
+    "llm_call": 3,
+    "agda_check": 12,
+    "sketch_repair": 3,
+    "decomposition": 3,
+    "sketch_attempt": 3,
+    "prove_start": 3,
+    "gap_start": 6,
+    "gap_candidate": 8,
+    "mimer": 3,
+    "gap_result": 6,
+    "promote": 3,
+    "lemma_start": 3,
+    "dsp_result": 4,
+    "lemma_end": 3,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 4584,
+    "output_tokens": 209
+  },
+  "result": null,
+  "success": null,
+  "target": "gcd[m,n]≡0⇒m≡0",
+  "error": null,
+  "llm_calls": 3
+}

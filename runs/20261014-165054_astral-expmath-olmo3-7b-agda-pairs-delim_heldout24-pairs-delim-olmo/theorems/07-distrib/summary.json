@@ -1,0 +1,26 @@
+{
+  "run_id": "07-distrib",
+  "model": "astral-expmath/olmo3-7b-agda-pairs-delim-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T16:52:07.222714+00:00",
+  "finished_at": "2026-10-14T16:53:29.810641+00:00",
+  "elapsed_s": 82.587,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 4,
+    "agda_check": 8,
+    "sketch_repair": 4,
+    "sketch_attempt": 4,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 104,
+    "output_tokens": 524
+  },
+  "result": null,
+  "success": null,
+  "target": "∧-distrib-∨",
+  "error": null,
+  "llm_calls": 4
+}

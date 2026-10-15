@@ -1,0 +1,18 @@
+{
+  "run_id": "20261015-004941_astral-expmath-qwen3-5-4b-agda-raw-cpt-m_hidden24-L2-qwen-drafted",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "hidden24-L2-qwen-drafted",
+  "started_at": "2026-10-15T00:49:41.308568+00:00",
+  "finished_at": "2026-10-15T01:52:27.320777+00:00",
+  "elapsed_s": 3766.012,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 0,
+  "wall_s": 3766.0
+}

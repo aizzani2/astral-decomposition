@@ -1,0 +1,34 @@
+{
+  "run_id": "14-drop",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T22:26:22.547014+00:00",
+  "finished_at": "2026-10-14T22:27:56.700661+00:00",
+  "elapsed_s": 94.153,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 2,
+    "agda_check": 10,
+    "sketch_repair": 2,
+    "sketch_attempt": 2,
+    "decomposition": 1,
+    "prove_start": 1,
+    "gap_start": 5,
+    "gap_candidate": 16,
+    "mimer": 4,
+    "gap_result": 5,
+    "promote": 3,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 9438,
+    "output_tokens": 166
+  },
+  "result": null,
+  "success": null,
+  "target": "drop-∷",
+  "error": null,
+  "llm_calls": 2
+}

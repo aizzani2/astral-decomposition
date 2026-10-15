@@ -1,0 +1,18 @@
+{
+  "run_id": "20261009-022248_hf-co-astral-expmath-qwen3-5-4b-agda-aut_ablation-3-dsp-qwen",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "ablation-3-dsp-qwen",
+  "started_at": "2026-10-09T02:22:48.304197+00:00",
+  "finished_at": "2026-10-09T02:37:06.676846+00:00",
+  "elapsed_s": 858.372,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 8,
+  "wall_s": 858.4
+}

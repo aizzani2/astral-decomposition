@@ -1,0 +1,35 @@
+{
+  "run_id": "16-toℕ-inverseˡ",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T00:16:23.616116+00:00",
+  "finished_at": "2026-10-15T00:26:25.314537+00:00",
+  "elapsed_s": 601.698,
+  "event_counts": {
+    "drafts_ready": 2,
+    "llm_call": 18,
+    "agda_check": 24,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 10,
+    "gap_candidate": 35,
+    "mimer": 8,
+    "gap_result": 10,
+    "promote": 7,
+    "lemma_start": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 74154,
+    "output_tokens": 52477
+  },
+  "result": null,
+  "success": null,
+  "target": "toℕ-inverseˡ",
+  "error": null,
+  "llm_calls": 18
+}

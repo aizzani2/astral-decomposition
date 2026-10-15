@@ -1,0 +1,18 @@
+[project]
+name = "astral-decomposition"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["requests"]
+
+[project.optional-dependencies]
+claude = ["anthropic"]
+data = ["pyarrow"]   # reading the astral-expmath datasets (util/agda_data.py)
+dev = ["pytest"]
+serve = ["torch", "transformers>=5.17", "peft", "bitsandbytes", "accelerate", "flash-linear-attention"]   # cli/serve_hf.py
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

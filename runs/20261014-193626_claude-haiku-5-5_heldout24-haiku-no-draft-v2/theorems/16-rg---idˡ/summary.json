@@ -1,0 +1,32 @@
+{
+  "run_id": "16-rg---idˡ",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T20:02:47.144350+00:00",
+  "finished_at": "2026-10-14T20:04:33.125063+00:00",
+  "elapsed_s": 105.98,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 5,
+    "agda_check": 1,
+    "decomposition": 1,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 2,
+    "gap_candidate": 9,
+    "mimer": 2,
+    "gap_result": 2,
+    "promote": 2,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 27583,
+    "output_tokens": 18299
+  },
+  "result": null,
+  "success": null,
+  "target": "rg-·-idˡ",
+  "error": null,
+  "llm_calls": 5
+}

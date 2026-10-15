@@ -1,0 +1,35 @@
+{
+  "run_id": "18-distribˡ-law",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:46:55.174633+00:00",
+  "finished_at": "2026-10-09T02:47:52.496588+00:00",
+  "elapsed_s": 57.322,
+  "event_counts": {
+    "llm_call": 5,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 8,
+    "sketch_repair": 2,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 2,
+    "gap_candidate": 2,
+    "mimer": 2,
+    "gap_result": 2,
+    "promote": 2,
+    "dsp_result": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 8832,
+    "output_tokens": 762
+  },
+  "result": null,
+  "success": null,
+  "target": "∧-distribˡ-law",
+  "error": null,
+  "llm_calls": 5
+}

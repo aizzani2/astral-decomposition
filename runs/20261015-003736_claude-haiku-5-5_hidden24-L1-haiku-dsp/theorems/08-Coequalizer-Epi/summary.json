@@ -1,0 +1,36 @@
+{
+  "run_id": "08-Coequalizer-Epi",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T01:13:17.469841+00:00",
+  "finished_at": "2026-10-15T01:15:29.786225+00:00",
+  "elapsed_s": 132.316,
+  "event_counts": {
+    "llm_call": 7,
+    "draft": 3,
+    "drafts_ready": 2,
+    "agda_check": 5,
+    "sketch_repair": 1,
+    "decomposition": 4,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 2,
+    "gap_candidate": 4,
+    "mimer": 2,
+    "gap_result": 2,
+    "lemma_start": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 24365,
+    "output_tokens": 20669
+  },
+  "result": null,
+  "success": null,
+  "target": "Coequalizer⇒Epi",
+  "error": null,
+  "llm_calls": 7
+}

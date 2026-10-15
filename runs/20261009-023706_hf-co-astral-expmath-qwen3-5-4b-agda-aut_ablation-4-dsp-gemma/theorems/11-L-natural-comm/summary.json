@@ -1,0 +1,37 @@
+{
+  "run_id": "11-L-natural-comm",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:43:07.631117+00:00",
+  "finished_at": "2026-10-09T02:46:54.845566+00:00",
+  "elapsed_s": 227.214,
+  "event_counts": {
+    "llm_call": 12,
+    "draft": 4,
+    "drafts_ready": 3,
+    "agda_check": 24,
+    "sketch_repair": 4,
+    "decomposition": 4,
+    "sketch_attempt": 4,
+    "prove_start": 4,
+    "gap_start": 6,
+    "gap_candidate": 6,
+    "mimer": 4,
+    "gap_result": 6,
+    "promote": 4,
+    "lemma_start": 2,
+    "dsp_result": 4,
+    "lemma_end": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 12986,
+    "output_tokens": 3911
+  },
+  "result": null,
+  "success": null,
+  "target": "L-natural-comm",
+  "error": null,
+  "llm_calls": 12
+}

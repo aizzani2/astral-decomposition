@@ -1,0 +1,38 @@
+{
+  "run_id": "15-pow--hom",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T03:41:09.294327+00:00",
+  "finished_at": "2026-10-15T03:55:29.337435+00:00",
+  "elapsed_s": 860.043,
+  "event_counts": {
+    "llm_call": 22,
+    "draft": 4,
+    "drafts_ready": 3,
+    "agda_check": 41,
+    "decomposition": 3,
+    "sketch_attempt": 5,
+    "prove_start": 3,
+    "gap_start": 8,
+    "gap_candidate": 55,
+    "mimer": 7,
+    "gap_result": 8,
+    "lemma_unused": 1,
+    "lemma_start": 2,
+    "promote": 4,
+    "dsp_result": 4,
+    "lemma_end": 2,
+    "sketch_repair": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 92695,
+    "output_tokens": 113181
+  },
+  "result": null,
+  "success": null,
+  "target": "pow′-hom",
+  "error": null,
+  "llm_calls": 22
+}

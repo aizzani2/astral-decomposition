@@ -1,0 +1,150 @@
+{
+ "origin": {
+  "library": "agda-stdlib",
+  "path": "src/Data/Nat/Properties.agda",
+  "commit": "47beb93"
+ },
+ "line": 817,
+ "proof": "*-distribʳ-+ : _*_ DistributesOverʳ _+_\n*-distribʳ-+ m zero    o = refl\n*-distribʳ-+ m (suc n) o = begin-equality\n  (suc n + o) * m     ≡⟨⟩\n  m + (n + o) * m     ≡⟨ cong (m +_) (*-distribʳ-+ m n o) ⟩\n  m + (n * m + o * m) ≡⟨ sym (+-assoc m (n * m) (o * m)) ⟩\n  m + n * m + o * m   ≡⟨⟩\n  suc n * m + o * m   ∎",
+ "decomposition": {
+  "name": "*-distribʳ-+",
+  "signature": "*-distribʳ-+ : _*_ DistributesOverʳ _+_",
+  "clauses": [
+   {
+    "lhs": "*-distribʳ-+ m zero o",
+    "goal": "(zero + o) * m ≡ zero * m + o * m",
+    "variables": [
+     "m",
+     "o"
+    ],
+    "variable_types": {
+     "m": "ℕ",
+     "o": "ℕ"
+    },
+    "hidden": [],
+    "steps": [
+     {
+      "statement": "(zero + o) * m ≡ zero * m + o * m",
+      "justification": "refl",
+      "head": "refl",
+      "uses": [],
+      "recursive": false,
+      "normal": "",
+      "lhs": "",
+      "rhs": "",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   },
+   {
+    "lhs": "*-distribʳ-+ m (suc n) o",
+    "goal": "(suc n + o) * m ≡ suc n * m + o * m",
+    "variables": [
+     "m",
+     "n",
+     "o"
+    ],
+    "variable_types": {
+     "m": "ℕ",
+     "n": "ℕ",
+     "o": "ℕ"
+    },
+    "hidden": [],
+    "steps": [
+     {
+      "statement": "(suc n + o) * m ≡ m + (n + o) * m",
+      "justification": "",
+      "head": "",
+      "uses": [],
+      "recursive": false,
+      "normal": "",
+      "lhs": "(suc n + o) * m",
+      "rhs": "m + (n + o) * m",
+      "relation": "≡",
+      "reversed": false
+     },
+     {
+      "statement": "m + (n + o) * m ≡ m + (n * m + o * m)",
+      "justification": "cong (m +_) (*-distribʳ-+ m n o)",
+      "head": "*-distribʳ-+",
+      "uses": [],
+      "recursive": true,
+      "normal": "",
+      "lhs": "m + (n + o) * m",
+      "rhs": "m + (n * m + o * m)",
+      "relation": "≡",
+      "reversed": false
+     },
+     {
+      "statement": "m + (n * m + o * m) ≡ m + n * m + o * m",
+      "justification": "sym (+-assoc m (n * m) (o * m))",
+      "head": "+-assoc",
+      "uses": [
+       "+-assoc"
+      ],
+      "recursive": false,
+      "normal": "",
+      "lhs": "m + (n * m + o * m)",
+      "rhs": "m + n * m + o * m",
+      "relation": "≡",
+      "reversed": false
+     },
+     {
+      "statement": "m + n * m + o * m ≡ suc n * m + o * m",
+      "justification": "",
+      "head": "",
+      "uses": [],
+      "recursive": false,
+      "normal": "",
+      "lhs": "m + n * m + o * m",
+      "rhs": "suc n * m + o * m",
+      "relation": "≡",
+      "reversed": false
+     }
+    ],
+    "note": ""
+   }
+  ],
+  "lemmas": {
+   "+-assoc": "Associative _+_"
+  },
+  "lemma_normal": {
+   "+-assoc": "(x y z : ℕ) → x + y + z ≡ x + (y + z)"
+  }
+ },
+ "sketches": [
+  {
+   "granularity": "step",
+   "excerpt": "*-distribʳ-+ : _*_ DistributesOverʳ _+_\n*-distribʳ-+ m zero    o = -- was: refl\n  {!!}\n*-distribʳ-+ m (suc n) o = begin-equality\n  (suc n + o) * m     ≡⟨⟩\n  m + (n + o) * m     ≡⟨ {!!} ⟩  -- was: cong (m +_) (*-distribʳ-+ m n o)\n  m + (n * m + o * m) ≡⟨ {!!} ⟩  -- was: sym (+-assoc m (n * m) (o * m))\n  m + n * m + o * m   ≡⟨⟩\n  suc n * m + o * m   ∎",
+   "holes": [
+    "(zero + o) * m ≡ zero * m + o * m",
+    "m + (n * m + o * m) ≡ m + n * m + o * m",
+    "m + (n + o) * m ≡ m + (n * m + o * m)"
+   ],
+   "lemmas": [],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  },
+  {
+   "granularity": "lemma",
+   "excerpt": "*-distribʳ-+-lemma1 : (m : ℕ) → (n : ℕ) → (o : ℕ) → m + (n * m + o * m) ≡ m + n * m + o * m\n*-distribʳ-+-lemma1 m n o = {!!}\n*-distribʳ-+ : _*_ DistributesOverʳ _+_\n*-distribʳ-+ m zero    o = -- was: refl\n  {!!}\n*-distribʳ-+ m (suc n) o = begin-equality\n  (suc n + o) * m     ≡⟨⟩\n  m + (n + o) * m     ≡⟨ {!!} ⟩  -- was: cong (m +_) (*-distribʳ-+ m n o)\n  m + (n * m + o * m) ≡⟨ *-distribʳ-+-lemma1 m n o ⟩\n  m + n * m + o * m   ≡⟨⟩\n  suc n * m + o * m   ∎",
+   "holes": [
+    "m + (n * m + o * m) ≡ m + n * m + o * m",
+    "(zero + o) * m ≡ zero * m + o * m",
+    "m + (n + o) * m ≡ m + (n * m + o * m)"
+   ],
+   "lemmas": [
+    "*-distribʳ-+-lemma1"
+   ],
+   "problems": [],
+   "warnings": [],
+   "notes": [],
+   "valid": true
+  }
+ ],
+ "comparison": null
+}

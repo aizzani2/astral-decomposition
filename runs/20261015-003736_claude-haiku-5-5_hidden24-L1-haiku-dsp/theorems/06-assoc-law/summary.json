@@ -1,0 +1,36 @@
+{
+  "run_id": "06-assoc-law",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T01:04:25.347958+00:00",
+  "finished_at": "2026-10-15T01:12:56.694671+00:00",
+  "elapsed_s": 511.346,
+  "event_counts": {
+    "llm_call": 24,
+    "draft": 4,
+    "drafts_ready": 3,
+    "agda_check": 12,
+    "decomposition": 4,
+    "sketch_attempt": 4,
+    "prove_start": 4,
+    "gap_start": 8,
+    "gap_candidate": 46,
+    "mimer": 8,
+    "gap_result": 8,
+    "promote": 6,
+    "dsp_result": 4,
+    "lemma_start": 2,
+    "lemma_end": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 118312,
+    "output_tokens": 66201
+  },
+  "result": null,
+  "success": null,
+  "target": "assoc-law",
+  "error": null,
+  "llm_calls": 24
+}

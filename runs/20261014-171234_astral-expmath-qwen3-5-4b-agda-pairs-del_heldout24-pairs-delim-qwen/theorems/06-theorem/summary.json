@@ -1,0 +1,25 @@
+{
+  "run_id": "06-theorem",
+  "model": "astral-expmath/qwen3.5-4b-agda-pairs-delim-cpt-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T17:14:17.819654+00:00",
+  "finished_at": "2026-10-14T17:14:46.081082+00:00",
+  "elapsed_s": 28.261,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 4,
+    "agda_check": 8,
+    "sketch_attempt": 4,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 104,
+    "output_tokens": 132
+  },
+  "result": null,
+  "success": null,
+  "target": "++⁺",
+  "error": null,
+  "llm_calls": 4
+}

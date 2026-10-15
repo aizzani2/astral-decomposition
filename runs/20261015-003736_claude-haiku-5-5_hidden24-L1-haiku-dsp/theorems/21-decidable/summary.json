@@ -1,0 +1,37 @@
+{
+  "run_id": "21-decidable",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T02:18:21.223414+00:00",
+  "finished_at": "2026-10-15T02:23:11.543502+00:00",
+  "elapsed_s": 290.32,
+  "event_counts": {
+    "llm_call": 19,
+    "draft": 5,
+    "drafts_ready": 4,
+    "agda_check": 12,
+    "sketch_repair": 1,
+    "sketch_attempt": 5,
+    "decomposition": 8,
+    "prove_start": 4,
+    "gap_start": 7,
+    "gap_candidate": 37,
+    "mimer": 7,
+    "gap_result": 7,
+    "lemma_unused": 1,
+    "lemma_start": 3,
+    "dsp_result": 4,
+    "lemma_end": 3,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 94027,
+    "output_tokens": 55498
+  },
+  "result": null,
+  "success": null,
+  "target": "decidable",
+  "error": null,
+  "llm_calls": 19
+}

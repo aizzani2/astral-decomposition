@@ -1,0 +1,26 @@
+{
+  "run_id": "10-coprime-divisor",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T22:17:52.835935+00:00",
+  "finished_at": "2026-10-14T22:18:25.049723+00:00",
+  "elapsed_s": 32.213,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 4,
+    "agda_check": 6,
+    "sketch_repair": 2,
+    "sketch_attempt": 4,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 5840,
+    "output_tokens": 232
+  },
+  "result": null,
+  "success": null,
+  "target": "coprime-divisor",
+  "error": null,
+  "llm_calls": 4
+}

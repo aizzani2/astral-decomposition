@@ -1,0 +1,33 @@
+{
+  "run_id": "15-Radjunct-resp",
+  "model": "astral-expmath/qwen3.5-4b-agda-pairs-delim-cpt-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T17:17:12.151024+00:00",
+  "finished_at": "2026-10-14T17:17:52.928061+00:00",
+  "elapsed_s": 40.777,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 1,
+    "agda_check": 5,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 48,
+    "output_tokens": 49
+  },
+  "result": null,
+  "success": null,
+  "target": "Radjunct-resp-≈",
+  "error": null,
+  "llm_calls": 1
+}

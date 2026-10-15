@@ -1,0 +1,35 @@
+{
+  "run_id": "02-is-fold",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:37:33.686801+00:00",
+  "finished_at": "2026-10-14T19:51:34.891108+00:00",
+  "elapsed_s": 841.204,
+  "event_counts": {
+    "drafts_ready": 4,
+    "llm_call": 23,
+    "agda_check": 19,
+    "decomposition": 3,
+    "sketch_attempt": 3,
+    "prove_start": 3,
+    "gap_start": 16,
+    "gap_candidate": 39,
+    "mimer": 10,
+    "gap_result": 16,
+    "promote": 10,
+    "lemma_start": 3,
+    "dsp_result": 4,
+    "lemma_end": 3,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 59802,
+    "output_tokens": 109351
+  },
+  "result": null,
+  "success": null,
+  "target": "*+-is-fold",
+  "error": null,
+  "llm_calls": 23
+}

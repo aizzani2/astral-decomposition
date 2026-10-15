@@ -1,0 +1,27 @@
+{
+  "run_id": "09-glueTrianglesʳ",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:42:47.325495+00:00",
+  "finished_at": "2026-10-09T02:43:25.245920+00:00",
+  "elapsed_s": 37.92,
+  "event_counts": {
+    "llm_call": 12,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 13,
+    "sketch_repair": 4,
+    "sketch_attempt": 4,
+    "dsp_result": 2
+  },
+  "token_totals": {
+    "prompt_tokens": 19075,
+    "output_tokens": 1447
+  },
+  "result": null,
+  "success": null,
+  "target": "glueTrianglesʳ",
+  "error": null,
+  "llm_calls": 12
+}

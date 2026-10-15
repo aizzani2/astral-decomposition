@@ -1,0 +1,36 @@
+{
+  "run_id": "10-initial-product-initial",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:56:03.306576+00:00",
+  "finished_at": "2026-10-14T20:04:07.956530+00:00",
+  "elapsed_s": 484.65,
+  "event_counts": {
+    "drafts_ready": 2,
+    "llm_call": 10,
+    "agda_check": 21,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 5,
+    "gap_candidate": 22,
+    "mimer": 4,
+    "gap_result": 5,
+    "promote": 4,
+    "lemma_start": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 36124,
+    "output_tokens": 28311
+  },
+  "result": null,
+  "success": null,
+  "target": "initial→product-initial",
+  "error": null,
+  "llm_calls": 10
+}

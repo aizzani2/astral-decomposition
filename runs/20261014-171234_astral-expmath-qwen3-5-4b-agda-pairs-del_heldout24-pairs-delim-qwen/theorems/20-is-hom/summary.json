@@ -1,0 +1,33 @@
+{
+  "run_id": "20-is-hom",
+  "model": "astral-expmath/qwen3.5-4b-agda-pairs-delim-cpt-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T17:18:04.403114+00:00",
+  "finished_at": "2026-10-14T17:18:31.604271+00:00",
+  "elapsed_s": 27.201,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 1,
+    "agda_check": 6,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 1,
+    "gap_candidate": 2,
+    "mimer": 1,
+    "gap_result": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 50,
+    "output_tokens": 51
+  },
+  "result": null,
+  "success": null,
+  "target": "∘-is-hom",
+  "error": null,
+  "llm_calls": 1
+}

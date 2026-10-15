@@ -1,0 +1,26 @@
+{
+  "run_id": "05-tabulate",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T17:23:08.828014+00:00",
+  "finished_at": "2026-10-14T17:24:12.604544+00:00",
+  "elapsed_s": 63.776,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 4,
+    "agda_check": 5,
+    "sketch_attempt": 4,
+    "sketch_repair": 1,
+    "dsp_result": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 18520,
+    "output_tokens": 165
+  },
+  "result": null,
+  "success": null,
+  "target": "tabulate⁻",
+  "error": null,
+  "llm_calls": 4
+}

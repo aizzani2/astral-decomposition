@@ -1,0 +1,27 @@
+{
+  "run_id": "19-P-id2",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T19:28:30.297994+00:00",
+  "finished_at": "2026-10-14T19:33:33.856965+00:00",
+  "elapsed_s": 303.559,
+  "event_counts": {
+    "llm_call": 6,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 6,
+    "sketch_repair": 2,
+    "sketch_attempt": 4,
+    "dsp_result": 2
+  },
+  "token_totals": {
+    "prompt_tokens": 46405,
+    "output_tokens": 68628
+  },
+  "result": null,
+  "success": null,
+  "target": "P-id2",
+  "error": null,
+  "llm_calls": 6
+}

@@ -1,0 +1,36 @@
+{
+  "run_id": "02-is-fold",
+  "model": "astral-expmath/qwen3.5-4b-agda-pairs-delim-cpt-sft",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T17:12:34.418318+00:00",
+  "finished_at": "2026-10-14T17:14:17.819125+00:00",
+  "elapsed_s": 103.4,
+  "event_counts": {
+    "drafts_ready": 3,
+    "llm_call": 3,
+    "agda_check": 10,
+    "sketch_repair": 3,
+    "decomposition": 3,
+    "sketch_attempt": 3,
+    "prove_start": 3,
+    "gap_start": 7,
+    "gap_candidate": 7,
+    "mimer": 4,
+    "gap_result": 7,
+    "promote": 4,
+    "lemma_start": 2,
+    "dsp_result": 3,
+    "lemma_end": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 135,
+    "output_tokens": 845
+  },
+  "result": null,
+  "success": null,
+  "target": "*+-is-fold",
+  "error": null,
+  "llm_calls": 3
+}

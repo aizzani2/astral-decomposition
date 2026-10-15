@@ -1,0 +1,27 @@
+{
+  "run_id": "21-Birkhoff",
+  "model": "hf.co/astral-expmath/qwen3.5-4b-agda-autoformalize-context-GGUF:Q8_0",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-09T02:34:26.816804+00:00",
+  "finished_at": "2026-10-09T02:36:01.078604+00:00",
+  "elapsed_s": 94.261,
+  "event_counts": {
+    "llm_call": 16,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 18,
+    "sketch_repair": 4,
+    "sketch_attempt": 4,
+    "dsp_result": 2
+  },
+  "token_totals": {
+    "prompt_tokens": 39424,
+    "output_tokens": 4031
+  },
+  "result": null,
+  "success": null,
+  "target": "Birkhoff",
+  "error": null,
+  "llm_calls": 16
+}

@@ -1,0 +1,18 @@
+{
+  "run_id": "20261014-172137_astral-expmath-qwen3-5-4b-agda-raw-cpt-m_heldout24-raw-cpt-qwen",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "heldout24-raw-cpt-qwen",
+  "started_at": "2026-10-14T17:21:37.457726+00:00",
+  "finished_at": "2026-10-14T17:30:01.078751+00:00",
+  "elapsed_s": 503.621,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 11,
+  "wall_s": 503.6
+}

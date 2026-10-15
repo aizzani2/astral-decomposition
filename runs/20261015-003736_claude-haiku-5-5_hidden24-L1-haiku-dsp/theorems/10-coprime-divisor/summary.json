@@ -1,0 +1,35 @@
+{
+  "run_id": "10-coprime-divisor",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T01:15:29.786564+00:00",
+  "finished_at": "2026-10-15T01:35:01.921417+00:00",
+  "elapsed_s": 1172.134,
+  "event_counts": {
+    "llm_call": 28,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 46,
+    "sketch_repair": 1,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 12,
+    "gap_candidate": 46,
+    "mimer": 12,
+    "gap_result": 12,
+    "promote": 12,
+    "dsp_result": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 100281,
+    "output_tokens": 157967
+  },
+  "result": null,
+  "success": null,
+  "target": "coprime-divisor",
+  "error": null,
+  "llm_calls": 28
+}
