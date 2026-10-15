@@ -1,0 +1,35 @@
+{
+  "run_id": "00-log2-2-n-1--log2-n",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T23:00:01.741868+00:00",
+  "finished_at": "2026-10-14T23:07:40.705025+00:00",
+  "elapsed_s": 458.962,
+  "event_counts": {
+    "llm_call": 24,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 14,
+    "sketch_repair": 2,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 12,
+    "gap_candidate": 35,
+    "mimer": 11,
+    "gap_result": 12,
+    "promote": 6,
+    "dsp_result": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 45334,
+    "output_tokens": 21671
+  },
+  "result": null,
+  "success": null,
+  "target": "⌈log2⌉2*n≡1+⌈log2⌉n",
+  "error": null,
+  "llm_calls": 24
+}

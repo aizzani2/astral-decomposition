@@ -1,0 +1,35 @@
+{
+  "run_id": "09-H-id1",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T01:15:07.890671+00:00",
+  "finished_at": "2026-10-15T01:18:11.740040+00:00",
+  "elapsed_s": 183.849,
+  "event_counts": {
+    "llm_call": 7,
+    "draft": 3,
+    "drafts_ready": 2,
+    "agda_check": 4,
+    "decomposition": 4,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 3,
+    "gap_candidate": 6,
+    "mimer": 3,
+    "gap_result": 3,
+    "lemma_start": 1,
+    "dsp_result": 2,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 100938,
+    "output_tokens": 35978
+  },
+  "result": null,
+  "success": null,
+  "target": "H-id1",
+  "error": null,
+  "llm_calls": 7
+}

@@ -1,0 +1,38 @@
+{
+  "run_id": "17-isTotalOrder",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T03:55:29.338174+00:00",
+  "finished_at": "2026-10-15T04:20:01.684032+00:00",
+  "elapsed_s": 1472.345,
+  "event_counts": {
+    "llm_call": 64,
+    "draft": 12,
+    "drafts_ready": 11,
+    "agda_check": 97,
+    "decomposition": 20,
+    "sketch_attempt": 13,
+    "prove_start": 12,
+    "gap_start": 37,
+    "gap_candidate": 178,
+    "mimer": 37,
+    "gap_result": 37,
+    "lemma_unused": 4,
+    "lemma_start": 10,
+    "sketch_repair": 1,
+    "dsp_result": 12,
+    "lemma_end": 10,
+    "promote": 6,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 299771,
+    "output_tokens": 270295
+  },
+  "result": null,
+  "success": null,
+  "target": "×-isTotalOrder",
+  "error": null,
+  "llm_calls": 64
+}

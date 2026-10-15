@@ -1,0 +1,34 @@
+{
+  "run_id": "03-i₁-cartesian",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T00:50:22.549110+00:00",
+  "finished_at": "2026-10-15T01:03:09.379234+00:00",
+  "elapsed_s": 766.83,
+  "event_counts": {
+    "llm_call": 12,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 24,
+    "decomposition": 2,
+    "sketch_attempt": 2,
+    "prove_start": 2,
+    "gap_start": 4,
+    "gap_candidate": 26,
+    "mimer": 4,
+    "gap_result": 4,
+    "promote": 4,
+    "dsp_result": 2,
+    "sketch_repair": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 56687,
+    "output_tokens": 102087
+  },
+  "result": null,
+  "success": null,
+  "target": "i₁-cartesian",
+  "error": null,
+  "llm_calls": 12
+}

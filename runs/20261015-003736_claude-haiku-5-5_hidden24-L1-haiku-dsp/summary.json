@@ -1,0 +1,18 @@
+{
+  "run_id": "20261015-003736_claude-haiku-5-5_hidden24-L1-haiku-dsp",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "hidden24-L1-haiku-dsp",
+  "started_at": "2026-10-15T00:37:36.248703+00:00",
+  "finished_at": "2026-10-15T02:30:26.508748+00:00",
+  "elapsed_s": 6770.26,
+  "event_counts": {},
+  "token_totals": {},
+  "result": null,
+  "success": null,
+  "target": null,
+  "error": null,
+  "theorems": 24,
+  "proved": 10,
+  "wall_s": 6770.2
+}

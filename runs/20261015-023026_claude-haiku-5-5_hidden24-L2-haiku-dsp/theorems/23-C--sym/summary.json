@@ -1,0 +1,37 @@
+{
+  "run_id": "23-C--sym",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T04:25:45.261305+00:00",
+  "finished_at": "2026-10-15T04:39:54.937266+00:00",
+  "elapsed_s": 849.676,
+  "event_counts": {
+    "llm_call": 21,
+    "draft": 5,
+    "drafts_ready": 4,
+    "agda_check": 22,
+    "sketch_attempt": 6,
+    "decomposition": 7,
+    "prove_start": 5,
+    "gap_start": 13,
+    "gap_candidate": 29,
+    "mimer": 8,
+    "gap_result": 13,
+    "promote": 4,
+    "dsp_result": 5,
+    "lemma_unused": 1,
+    "lemma_start": 3,
+    "lemma_end": 3,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 93331,
+    "output_tokens": 138274
+  },
+  "result": null,
+  "success": null,
+  "target": "C′-sym",
+  "error": null,
+  "llm_calls": 21
+}

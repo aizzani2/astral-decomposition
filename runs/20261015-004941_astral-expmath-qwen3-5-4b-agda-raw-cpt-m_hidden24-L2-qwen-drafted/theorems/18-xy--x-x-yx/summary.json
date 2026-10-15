@@ -1,0 +1,37 @@
+{
+  "run_id": "18-xy--x-x-yx",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-15T01:29:21.266464+00:00",
+  "finished_at": "2026-10-15T01:34:19.876478+00:00",
+  "elapsed_s": 298.61,
+  "event_counts": {
+    "llm_call": 18,
+    "draft": 3,
+    "drafts_ready": 2,
+    "agda_check": 19,
+    "sketch_repair": 3,
+    "decomposition": 3,
+    "sketch_attempt": 3,
+    "prove_start": 3,
+    "gap_start": 4,
+    "gap_candidate": 13,
+    "mimer": 3,
+    "gap_result": 4,
+    "promote": 3,
+    "dsp_result": 3,
+    "lemma_start": 1,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 35834,
+    "output_tokens": 11712
+  },
+  "result": null,
+  "success": null,
+  "target": "[xy]⋆x≈x[yx]⋆",
+  "error": null,
+  "llm_calls": 18
+}

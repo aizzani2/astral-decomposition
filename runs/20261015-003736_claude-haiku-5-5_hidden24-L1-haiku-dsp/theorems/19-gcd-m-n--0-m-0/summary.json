@@ -1,0 +1,36 @@
+{
+  "run_id": "19-gcd-m-n--0-m-0",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T02:16:00.242475+00:00",
+  "finished_at": "2026-10-15T02:23:05.034301+00:00",
+  "elapsed_s": 424.791,
+  "event_counts": {
+    "llm_call": 28,
+    "draft": 8,
+    "drafts_ready": 7,
+    "agda_check": 7,
+    "decomposition": 6,
+    "sketch_attempt": 6,
+    "prove_start": 6,
+    "gap_start": 8,
+    "gap_candidate": 22,
+    "mimer": 8,
+    "gap_result": 8,
+    "lemma_start": 6,
+    "sketch_repair": 1,
+    "dsp_result": 8,
+    "lemma_end": 6,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 106664,
+    "output_tokens": 84500
+  },
+  "result": null,
+  "success": null,
+  "target": "gcd[m,n]≡0⇒m≡0",
+  "error": null,
+  "llm_calls": 28
+}

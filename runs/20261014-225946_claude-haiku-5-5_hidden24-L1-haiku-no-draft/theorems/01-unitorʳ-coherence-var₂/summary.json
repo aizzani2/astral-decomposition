@@ -1,0 +1,33 @@
+{
+  "run_id": "01-unitorʳ-coherence-var₂",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-14T22:59:46.604171+00:00",
+  "finished_at": "2026-10-14T23:03:04.867239+00:00",
+  "elapsed_s": 198.262,
+  "event_counts": {
+    "drafts_ready": 1,
+    "llm_call": 5,
+    "agda_check": 1,
+    "decomposition": 1,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "gap_start": 2,
+    "gap_candidate": 10,
+    "mimer": 2,
+    "gap_result": 2,
+    "promote": 2,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 53127,
+    "output_tokens": 28372
+  },
+  "result": null,
+  "success": null,
+  "target": "unitorʳ-coherence-var₂",
+  "error": null,
+  "llm_calls": 5
+}

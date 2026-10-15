@@ -1,0 +1,29 @@
+{
+  "run_id": "02-Sub-isBoundedLattice",
+  "model": "astral-expmath/qwen3.5-4b-agda-raw-cpt-merged",
+  "backend": "ollama",
+  "tag": "",
+  "started_at": "2026-10-14T23:04:38.968992+00:00",
+  "finished_at": "2026-10-14T23:05:36.915852+00:00",
+  "elapsed_s": 57.946,
+  "event_counts": {
+    "llm_call": 4,
+    "draft": 2,
+    "drafts_ready": 1,
+    "agda_check": 2,
+    "decomposition": 2,
+    "sketch_attempt": 1,
+    "prove_start": 1,
+    "dsp_result": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 9153,
+    "output_tokens": 5325
+  },
+  "result": null,
+  "success": null,
+  "target": "Sub-isBoundedLattice",
+  "error": null,
+  "llm_calls": 4
+}

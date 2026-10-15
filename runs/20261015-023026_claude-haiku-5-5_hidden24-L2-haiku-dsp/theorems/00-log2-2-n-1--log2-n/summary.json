@@ -1,0 +1,36 @@
+{
+  "run_id": "00-log2-2-n-1--log2-n",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T02:30:26.706236+00:00",
+  "finished_at": "2026-10-15T02:45:14.366799+00:00",
+  "elapsed_s": 887.66,
+  "event_counts": {
+    "llm_call": 30,
+    "draft": 3,
+    "drafts_ready": 2,
+    "agda_check": 16,
+    "decomposition": 3,
+    "sketch_attempt": 3,
+    "prove_start": 3,
+    "gap_start": 17,
+    "gap_candidate": 44,
+    "mimer": 14,
+    "gap_result": 17,
+    "promote": 12,
+    "dsp_result": 3,
+    "lemma_start": 1,
+    "lemma_end": 1,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 120472,
+    "output_tokens": 127389
+  },
+  "result": null,
+  "success": null,
+  "target": "⌈log2⌉2*n≡1+⌈log2⌉n",
+  "error": null,
+  "llm_calls": 30
+}

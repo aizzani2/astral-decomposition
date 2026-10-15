@@ -1,0 +1,38 @@
+{
+  "run_id": "02-Sub-isBoundedLattice",
+  "model": "claude-haiku-5-5",
+  "backend": "claude-code",
+  "tag": "",
+  "started_at": "2026-10-15T00:50:15.001358+00:00",
+  "finished_at": "2026-10-15T00:59:33.368485+00:00",
+  "elapsed_s": 558.367,
+  "event_counts": {
+    "llm_call": 25,
+    "draft": 5,
+    "drafts_ready": 4,
+    "agda_check": 14,
+    "decomposition": 4,
+    "sketch_attempt": 6,
+    "prove_start": 4,
+    "gap_start": 9,
+    "gap_candidate": 32,
+    "mimer": 9,
+    "gap_result": 9,
+    "lemma_unused": 2,
+    "lemma_start": 3,
+    "sketch_repair": 5,
+    "dsp_result": 5,
+    "lemma_end": 3,
+    "promote": 2,
+    "decomposition_compare": 1
+  },
+  "token_totals": {
+    "prompt_tokens": 124732,
+    "output_tokens": 119432
+  },
+  "result": null,
+  "success": null,
+  "target": "Sub-isBoundedLattice",
+  "error": null,
+  "llm_calls": 25
+}
